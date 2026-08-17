@@ -1,8 +1,10 @@
 # pi-sysprompt-editor
 
 Pi extension that rebuilds the core system prompt from the owner-authored
-`SYSTEM.template.md`. `DESIGN.md` is the ratified design basis; the dated
-decision records live in `docs/`.
+templates in `templates/` and manages them through `/sysprompt` (switch,
+new, inspect, test). `DESIGN.md` is the design basis as built; the dated
+decision records live in `docs/`, and finished build plans with their
+execution logs and review registers live in `plans/`.
 
 ## Workflow charters
 
@@ -23,5 +25,12 @@ reviews.
 - The deployed extension is a symlink from Pi's extension directory to this
   repo, so edits here are live in new sessions; verify before leaving the
   tree broken.
+- Artifact formats are golden-pinned under `fixtures/golden/` as
+  input/expected pairs. A deliberate format change regenerates the expected
+  bytes from the pinned input and the diff is reviewed line by line;
+  `plans/` and `fixtures/` are excluded from prettier so those bytes stay
+  stable.
+- Generated artifacts go to the container's `../artifacts/` directory,
+  never into the repo.
 - CI is deferred until a remote exists; the gate script is the workflow's
   only job when it lands.

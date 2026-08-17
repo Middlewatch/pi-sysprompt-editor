@@ -1,6 +1,6 @@
 # pi-sysprompt-editor design basis
 
-**Status:** ratified 2026-08-17.
+**Status:** as built 2026-08-17.
 
 Reading list: `README.md` for the short product description,
 `docs/2026-08-17-template-manager-scope.md` for the decision record behind
@@ -64,19 +64,29 @@ unmodified.
 
 ## Expected behaviors
 
-Today: the extension rewrites the stock core from the single template on
-each turn start, preserves the tail byte-for-byte, and stands down for
-custom prompts, drifted shapes, and a missing template. Unit tests cover
-the rewrite and each fail-open branch.
+The extension rewrites the stock core from the active template on each turn
+start, preserves the tail byte-for-byte, and stands down for custom
+prompts, drifted shapes, and a missing template. Placeholders are optional:
+an absent placeholder means the template omits that section. Unit tests
+cover the rewrite and each fail-open branch.
 
-The template manager expansion adds: a single command opening an action menu with
-switch (pick the active template from `templates/`), new (seed a fresh
-template as a copy of the active one), inspect (immediate dump
-plus armed ground-truth capture, both written as markdown files, with a
-raw text twin of the captured prompt for byte comparison), and test
-(send the standardized analysis prompt with the fixture document, save the
-response to a dated results file). Template authoring itself stays in
-ordinary file edits.
+A single command, `/sysprompt`, opens an action menu with switch (pick the
+active template from `templates/`), new (seed a fresh template as a copy of
+the active one), inspect (immediate dump plus armed ground-truth capture,
+both written as markdown files, with a raw text twin of the captured prompt
+for byte comparison), and test (send the standardized analysis prompt with
+the fixture document, save the response to a dated results file whose
+header names the template that rendered and its content sha256). Template
+authoring itself stays in ordinary file edits.
+
+Two behaviors follow from the harness's event semantics. The armed capture
+rides `before_provider_request`, which fires only when the provider calls
+Pi's `onPayload` seam; a turn that ends with the capture still armed
+cancels it with a warning rather than letting it attach to a later turn.
+The output test attributes its result to the loop's final reply: a
+tool-calling assistant message ends its own turn but not the loop, so the
+pending capture holds until a message that stops for another reason, and
+the action refuses to start while the agent is busy or a test is pending.
 
 ## Deliberately not in scope
 
@@ -98,35 +108,36 @@ ordinary file edits.
 `scripts/verify.sh` is the gate: reproducible install, format check,
 typecheck, and unit tests. The unit suite runs against a synthetic stock
 prompt and covers the splice, every fail-open branch, pointer resolution
-(missing pointer, pointer naming a missing template), and template
-scaffolding. The armed inspection capture doubles as the field oracle: its
-dump against the provider payload is the acceptance check for splice
-correctness in a live session.
+(missing pointer, invalid pointer, pointer naming a missing template,
+missing default), template scaffolding, the command and hook wiring
+through a stub extension API, and byte-compares of the artifact formats
+against the golden pairs in `fixtures/golden/`. The armed inspection
+capture doubles as the field oracle: its dump against the provider payload
+is the acceptance check for splice correctness in a live session.
 
 Open question carried forward: a model-free conformance harness that drives
 the real Pi prompt loader, so shape drift in a harness update is caught by
 the gate rather than discovered in session.
 
-Freezability: the template set, the unit-test fixtures (synthetic stock
-prompt and expected renders), and this document would rebuild the behavior
-if the tree vanished.
+Freezability: the template set, the output-test fixture, the golden
+input/expected pairs, the unit suites' synthetic stock prompt, and this
+document would rebuild the behavior if the tree vanished.
 
 ## Structure
 
-Today the extension is a single `index.ts` beside `SYSTEM.template.md` and
-`tests/`. The target decomposition for the template manager build:
-
 - `index.ts`: event and command registration, kept thin.
 - `lib/splice.ts`: core rewrite and fail-open checks.
-- `lib/templates.ts`: template store — list, resolve active pointer,
-  scaffold new.
-- `lib/inspect.ts`: immediate dump and armed capture.
+- `lib/templates.ts`: template store (list, resolve active pointer,
+  scaffold new).
+- `lib/inspect.ts`: immediate dump, payload extraction, armed capture,
+  artifact naming.
 - `lib/output-test.ts`: standardized test send and results file.
-- `templates/`: owner-authored template set.
-- `tests/`: unit suite.
-
-Build order: template store and switch menu first, inspection second,
-output test third.
+- `templates/`: owner-authored template set with the gitignored `.active`
+  pointer.
+- `fixtures/`: the output-test document and the golden pairs.
+- `tests/`: unit suites.
+- `../artifacts/`: generated inspect and output-test files, outside the
+  repo.
 
 ## Provenance
 
@@ -136,3 +147,6 @@ output test third.
   record, including the delta against the prior basis, is
   `docs/2026-08-17-template-manager-scope.md`. Feasibility was checked
   against the Pi extension documentation shipped with the harness.
+- Built 2026-08-17 from `plans/2026-08-17-template-manager.plan.md`; the
+  two harness-semantics behaviors in Expected behaviors were review
+  findings ratified as amendments during that build.

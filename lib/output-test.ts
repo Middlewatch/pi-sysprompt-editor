@@ -4,7 +4,7 @@
  * dated result file naming the model and the template that rendered.
  */
 
-/** Frozen (checkpoint D3): the system prompt under test supplies all structure. */
+/** Deliberately bare: the system prompt under test supplies all structure and voice. */
 export const OUTPUT_TEST_PROMPT = "Summarize this article for me.";
 
 export interface ResultHeader {
