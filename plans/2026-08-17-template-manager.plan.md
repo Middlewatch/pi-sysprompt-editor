@@ -36,7 +36,7 @@ byte copy of the active template`.
   stock shape, unrecognized payload shape) leaves the prompt or artifact in
   the documented fallback state. Verified by named unit tests, one per
   branch.
-- `scripts/verify.sh` exits 0 with 31 unit tests passing, 0 failing.
+- `scripts/verify.sh` exits 0 with 36 unit tests passing, 0 failing.
 
 ## Fixed decisions
 
@@ -96,8 +96,8 @@ cd ~/projects/pi-sysprompt-editor/main && ./scripts/verify.sh
 Green is: node 22.x asserted, `npm ci` clean, `prettier --check` clean,
 `tsc --noEmit` clean, `node --experimental-strip-types --test
 tests/*.test.ts` all pass, 0 fail. Test count by packet: baseline 4
-(existing `tests/rewrite.test.ts`), P1.1 → 6, P1.2 → 12, P1.3 → 14,
-P1.4 → 17, P2.1 → 19, P2.2 → 27, P3.1 → 31. Live checks that need a real
+(existing `tests/rewrite.test.ts`), P1.1 → 6, P1.2 → 12, P1.3 → 15,
+P1.4 → 19, P2.1 → 21, P2.2 → 30, P3.1 → 36. Live checks that need a real
 session are phase gate eye checks, named in each phase gate, and are not
 part of verify.sh.
 
@@ -116,7 +116,10 @@ part of verify.sh.
 - `lib/templates.ts` — template store: list, active pointer read/write,
   scaffold. Every function takes the templates directory as its first
   argument; `index.ts` supplies the real path (resolved from
-  `import.meta.url`, same pattern as today), tests supply temp dirs.
+  `import.meta.url`, same pattern as today), tests supply temp dirs. The
+  pinned spellings from `index.ts` at repo root are
+  `new URL("./templates/", import.meta.url)` and
+  `new URL("../artifacts/", import.meta.url)`.
 - `lib/inspect.ts` — immediate dump rendering, payload system-prompt
   extraction, arm/disarm state, artifact writing.
 - `lib/output-test.ts` — pinned test prompt assembly, result filename,
@@ -229,8 +232,10 @@ export function readActiveTemplate(
 ): { name: string; content: string } | null;
 // invalid/missing pointer -> default.md; default.md missing -> null (fail open)
 export function setActiveTemplate(dir: string, name: string): void;
-export function scaffoldTemplate(dir: string, name: string): string | Error;
-// returns created path; Error when name invalid or file exists
+export function scaffoldTemplate(dir: string, name: string, content: string): string | Error;
+// content = the active template's content, supplied by the command after
+// its own readActiveTemplate check; returns created path; Error when name
+// invalid or file exists
 
 // lib/inspect.ts
 export function renderImmediateDump(options: SystemPromptOptions): string;
@@ -290,7 +295,8 @@ Switch: command handler → `listTemplates` → `ctx.ui.select` →
 undefined: return → `setActiveTemplate` → `ctx.ui.notify`.
 
 New: command handler → `ctx.ui.input` → undefined: return →
-`scaffoldTemplate` → notify path or error message.
+`readActiveTemplate` → null: notify "no active template to copy", return
+→ `scaffoldTemplate(dir, name, content)` → notify path or error message.
 
 Inspect: command handler → `ctx.getSystemPromptOptions()` →
 `renderImmediateDump` → write immediate file → `armCapture(stamp)` →
@@ -325,6 +331,7 @@ P1.1 (1–4), plus 2 new in P1.1 (5–6):
 6. `renderTemplate returns null on drifted shape`
 
 `tests/templates.test.ts` — 6 in P1.2 (7–12), 3 in P1.4 (13–15):
+(scaffold tests drive `scaffoldTemplate(dir, name, content)` directly)
 
 7. `pointer resolution: missing pointer falls back to default.md`
 8. `pointer resolution: invalid pointer line falls back to default.md`
@@ -337,16 +344,22 @@ P1.1 (1–4), plus 2 new in P1.1 (5–6):
 15. `scaffold: existing file not overwritten`
 
 `tests/wiring.test.ts` — command and hook glue through the real `index.ts`
-default export against a stub ExtensionAPI; 2 in P1.3 (16–17), 1 in P2.1
-(18), 1 in P2.2 (19), 1 in P3.1 (20):
+default export against a stub ExtensionAPI; 3 in P1.3 (16, 17, 32), 1 in
+P1.4 (33), 1 in P2.1 (18), 2 in P2.2 (19, 34), 2 in P3.1 (20, 36):
 
 16. `wiring: switch action writes the pointer through the registered command`
 17. `wiring: cancelled picker writes nothing`
 18. `wiring: inspect action writes the immediate dump file and arms capture`
 19. `wiring: armed capture writes provider md and raw txt with payload bytes`
 20. `wiring: turn_end with pending capture writes the result file`
+32. `wiring: switch with empty templates dir notifies and writes nothing`
+33. `wiring: new with no active template notifies and creates nothing`
+34. `wiring: artifact write failure notifies error and clears capture state`
+36. `wiring: result header records the rendered template name and sha256`
+    (drives a successful stub splice turn, then turn_end, and asserts the
+    header carries the rendered template's name and content sha256)
 
-`tests/inspect.test.ts` — 1 in P2.1 (21), 6 in P2.2 (22–27):
+`tests/inspect.test.ts` — 1 in P2.1 (21), 7 in P2.2 (22–27, 31):
 
 21. `immediate dump: golden byte-compare` (against
     `fixtures/golden/immediate-dump.md`, covering all sections)
@@ -360,19 +373,20 @@ default export against a stub ExtensionAPI; 2 in P1.3 (16–17), 1 in P2.1
     `fixtures/golden/provider-dump.md`, covering the header and fenced
     prompt serialization)
 
-`tests/output-test.test.ts` — 3 in P3.1 (28–30):
+`tests/output-test.test.ts` — 4 in P3.1 (28–30, 35):
 
 28. `prompt: fixture embedded verbatim after pinned instructions`
 29. `result: filename carries stamp, sanitized provider and model id`
 30. `result: golden byte-compare` (against
     `fixtures/golden/output-test-result.md`, covering header with template
     name and sha256)
+35. `result: assistant text blocks joined, non-text blocks ignored`
 
-Count reconciliation: 4 existing + 27 new = 31 at completion. Per packet:
-P1.1 adds 5–6 (→ 6), P1.2 adds 7–12 (→ 12), P1.3 adds 16–17 (→ 14), P1.4
-adds 13–15 (→ 17), P2.1 adds 18 and 21 (→ 19), P2.2 adds 19, 22–27, and
-31 (→ 27), P3.1 adds 20 and 28–30 (→ 31). These are the totals the
-Verification contract pins.
+Count reconciliation: 4 existing + 32 new = 36 at completion. Per packet:
+P1.1 adds 5–6 (→ 6), P1.2 adds 7–12 (→ 12), P1.3 adds 16, 17, 32 (→ 15),
+P1.4 adds 13–15 and 33 (→ 19), P2.1 adds 18 and 21 (→ 21), P2.2 adds 19,
+22–27, 31, 34 (→ 30), P3.1 adds 20, 28–30, 35, 36 (→ 36). These are the
+totals the Verification contract pins.
 
 ### Least confident decisions
 
@@ -429,16 +443,18 @@ built yet" until P1.4/P2.1/P3.1 replace them (carried as K5). Arg
 matching an action jumps straight to it; unknown arg notifies
 usage. `switch` per the pinned Interfaces flow. Esc at any
 picker cancels with no write.
-Acceptance: verify.sh green; 14 pass, 0 fail (adds wiring tests 16–17
-driving the registered command through a stub ExtensionAPI
+Acceptance: verify.sh green; 15 pass, 0 fail (adds wiring tests 16, 17,
+and 32 driving the registered command through a stub ExtensionAPI
 with stubbed ctx.ui). Falsification witness: writing the
 pointer before the select resolves turns test 17 red.
 
 ### P1.4 — Scaffold action
 
-Files: index.ts, lib/templates.ts, tests/templates.test.ts
+Files: index.ts, lib/templates.ts, tests/templates.test.ts,
+tests/wiring.test.ts
 Changes: `scaffoldTemplate` per the pinned signature and validation.
-Wire the `new` action: `ctx.ui.input("Template name:")` then
+Wire the `new` action per the pinned call stack: `ctx.ui.input`, then
+readActiveTemplate (null: notify "no active template to copy"), then
 scaffold, notify created path or the error message.
 Acceptance: verify.sh green; 17 pass, 0 fail (adds tests 13–15).
 Falsification witness: removing the existing-file check turns
@@ -446,7 +462,7 @@ test 15 red.
 
 ### Phase 1 gate
 
-Runnable: `./scripts/verify.sh` green, 17 unit tests pass, 0 fail.
+Runnable: `./scripts/verify.sh` green, 19 unit tests pass, 0 fail.
 Eye check (owner or builder in a live session): `/sysprompt` opens the
 menu; `switch` to a second template visibly changes the next reply's
 voice; `new` creates a template that then appears in the switch list;
@@ -471,7 +487,7 @@ The `inspect` action (replacing the K5 placeholder) writes
 `../artifacts/inspect/<stamp>-immediate.md` and notifies the
 path. Golden fixture created from a synthetic
 SystemPromptOptions value pinned in the test.
-Acceptance: verify.sh green; 19 pass, 0 fail (adds tests 18 and 21).
+Acceptance: verify.sh green; 21 pass, 0 fail (adds tests 18 and 21).
 Falsification witness: dropping the skills section from the
 renderer turns the golden compare (21) red.
 
@@ -485,15 +501,16 @@ inspect action arms after the immediate dump and notifies
 (checkpoint D4). `before_provider_request` handler per the
 pinned call stack: extraction rules, `.md` + `.txt` pair,
 JSON fallback, sha256-prefixed notify, no payload replacement.
-Acceptance: verify.sh green; 27 pass, 0 fail (adds tests 19, 22–27, and
-31); test 19 asserts the `.txt` bytes equal the synthetic payload's
-system string exactly, and test 31 byte-compares the `.md` serialization
-against its golden. Falsification witness: making
+Acceptance: verify.sh green; 30 pass, 0 fail (adds tests 19, 22–27, 31,
+and 34); test 19 asserts the `.txt` bytes equal the synthetic payload's
+system string exactly, test 31 byte-compares the `.md` serialization
+against its golden, and test 34 stubs a throwing write and asserts the
+error notify plus cleared capture state. Falsification witness: making
 takeArmedCapture return the stamp twice turns test 27 red.
 
 ### Phase 2 gate
 
-Runnable: verify.sh green, 27 unit tests pass, 0 fail.
+Runnable: verify.sh green, 30 unit tests pass, 0 fail.
 Eye check: in a live session with at least one other prompt-touching
 extension loaded, `/sysprompt inspect` then one message writes all three
 files; `sha256sum <stamp>-provider.txt` matches the notified hash prefix
@@ -517,14 +534,16 @@ Changes: lib/output-test.ts per the pinned signatures and formats
 `test` action (replacing the K5 placeholder) per the pinned
 call stack; attribution via `lastRender` per Interfaces; modelId and
 provider sanitized per Interfaces.
-Acceptance: verify.sh green; 31 pass, 0 fail (adds tests 20 and 28–30);
-test 20 drives a stub turn where before_agent_start failed open and
-asserts the header records `(stock)` with no sha line. Falsification
-witness: changing OUTPUT_TEST_PROMPT wording turns test 28 red.
+Acceptance: verify.sh green; 36 pass, 0 fail (adds tests 20, 28–30, 35,
+and 36); test 20 drives a stub turn where before_agent_start failed open
+and asserts the header records `(stock)` with no sha line; test 36 is the
+positive twin asserting the rendered template's name and sha256.
+Falsification witness: changing OUTPUT_TEST_PROMPT wording turns test 28
+red.
 
 ### Phase 3 gate
 
-Runnable: verify.sh green, 31 unit tests pass, 0 fail.
+Runnable: verify.sh green, 36 unit tests pass, 0 fail.
 Eye check: one live `/sysprompt test` run produces a results file whose
 header names the active template, its sha256, and the current model, and
 whose body is the model's summary; owner eyeballs it as the first corpus
@@ -538,8 +557,9 @@ Commit; build complete, hand to as-built pass.
 
 - K1: `import.meta.url` must resolve to the repo through Pi's extension
   loader and the deployed symlink. Today's index.ts already relies on this
-  and works live, so the risk is confined to the added `../templates` and
-  `../../artifacts` traversals. Earliest resolution: Phase 1 gate eye
+  and works live, so the risk is confined to the added `./templates/` and
+  `../artifacts/` traversals (spellings pinned in Layout). Earliest
+  resolution: Phase 1 gate eye
   check. Failure forces a CONTRACT AMENDMENT pinning absolute fallbacks.
 - K2: turn_end attribution. If another message lands between the test send
   and its turn_end, the pending capture may attach to the wrong assistant
@@ -627,3 +647,11 @@ input` return undefined on cancel; `pi.sendUserMessage` always triggers a
   artifact-write-failure, and assistant-text-extraction behaviors pinned
   in Interfaces; plans/ and fixtures/ exempted from prettier so packet
   fields and fixture bytes stay stable.
+- Round 3: FAIL with materials —
+  `plans/2026-08-17-template-manager.lint-3.md`. Fixed: inspect suite
+  heading corrected to 7 P2.2 tests (22–27, 31); the pinned edge behaviors
+  gained named gates (tests 32–35) and successful attribution gained its
+  positive test (36), totals rederived to 36; templates/artifacts URL
+  spellings pinned (`./templates/`, `../artifacts/` from index.ts) and K1
+  aligned; scaffold signature takes content with the command owning the
+  readActiveTemplate check.
