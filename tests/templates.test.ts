@@ -40,6 +40,7 @@ function capturedHandler(
     on(name: string, fn: unknown) {
       if (name === "before_agent_start") handler = fn;
     },
+    registerCommand() {},
   };
   systemPromptExtension(stub as never, { templatesDir });
   assert.ok(handler, "extension registered a before_agent_start handler");

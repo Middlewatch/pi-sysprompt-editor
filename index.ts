@@ -20,12 +20,23 @@
  * left exactly as Pi built it.
  */
 import { fileURLToPath } from "node:url";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+} from "@earendil-works/pi-coding-agent";
 import { renderTemplate, splitTail } from "./lib/splice.ts";
-import { readActiveTemplate } from "./lib/templates.ts";
+import {
+  listTemplates,
+  readActiveTemplate,
+  setActiveTemplate,
+} from "./lib/templates.ts";
 
 const STOCK_FIRST_LINE =
   "You are an expert coding assistant operating inside pi, a coding agent harness.";
+
+const ACTIONS = ["switch", "new", "inspect", "test"] as const;
+type Action = (typeof ACTIONS)[number];
+const USAGE = "usage: /sysprompt [switch|new|inspect|test]";
 
 /**
  * Filesystem locations the extension works against. Pi calls the default
@@ -65,5 +76,60 @@ export default function systemPromptExtension(
     const rendered = renderTemplate(active.content, core);
     if (rendered === null) return; // shape drifted: fail open
     return { systemPrompt: rendered + tail };
+  });
+
+  async function actionSwitch(ctx: ExtensionCommandContext): Promise<void> {
+    if (templatesDir === null) {
+      ctx.ui.notify("templates directory could not be resolved", "error");
+      return;
+    }
+    const names = listTemplates(templatesDir);
+    if (names.length === 0) {
+      ctx.ui.notify("no templates found", "warning");
+      return;
+    }
+    const chosen = await ctx.ui.select("Active template:", names);
+    if (chosen === undefined) return; // cancelled: no write
+    try {
+      setActiveTemplate(templatesDir, chosen);
+    } catch (err) {
+      ctx.ui.notify(String((err as Error).message ?? err), "error");
+      return;
+    }
+    ctx.ui.notify(`active template: ${chosen} (applies next message)`);
+  }
+
+  async function runAction(
+    action: Action,
+    ctx: ExtensionCommandContext,
+  ): Promise<void> {
+    switch (action) {
+      case "switch":
+        return actionSwitch(ctx);
+      case "new":
+      case "inspect":
+      case "test":
+        ctx.ui.notify(`${action}: not built yet`, "warning");
+        return;
+    }
+  }
+
+  pi.registerCommand("sysprompt", {
+    description: "Manage system prompt templates",
+    handler: async (args, ctx) => {
+      const arg = args.trim();
+      let action: Action;
+      if (arg === "") {
+        const chosen = await ctx.ui.select("System prompt:", [...ACTIONS]);
+        if (chosen === undefined) return; // cancelled
+        action = chosen as Action;
+      } else if ((ACTIONS as readonly string[]).includes(arg)) {
+        action = arg as Action;
+      } else {
+        ctx.ui.notify(USAGE, "warning");
+        return;
+      }
+      await runAction(action, ctx);
+    },
   });
 }

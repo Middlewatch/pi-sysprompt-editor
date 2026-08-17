@@ -40,3 +40,20 @@ CONTRACT AMENDMENT, or K/R resolution, newest last.
 - verify.sh: exit 0, 12 pass, 0 fail.
 - Falsification witness: red on making the pointer read rethrow (tests 1, 4,
   7, 10, 11, 12 fail), green on revert.
+
+## 2026-08-17 — P1.3 /sysprompt command and switch action
+
+- `pi.registerCommand("sysprompt")`: no args opens `ctx.ui.select` over
+  switch/new/inspect/test; a matching arg jumps to the action; unknown arg
+  notifies `usage: /sysprompt [switch|new|inspect|test]`. `new`, `inspect`,
+  `test` notify "not built yet" (K5). `switch` lists, selects, writes the
+  pointer, notifies; cancel at either picker writes nothing.
+- Files deviation, recorded: the stub ExtensionAPI in `tests/rewrite.test.ts`
+  and `tests/templates.test.ts` gained a no-op `registerCommand()` because
+  index.ts now registers a command at load. Two-line test-stub change, no
+  product code outside the Files list.
+- Tests 16, 17, 32, 40 in `tests/wiring.test.ts` (harness with stub
+  ExtensionAPI and stub ctx.ui, built through the `paths` seam).
+- verify.sh: exit 0, 16 pass, 0 fail.
+- Falsification witness: red on writing the pointer before the select
+  resolves (test 17 fails), green on revert.
