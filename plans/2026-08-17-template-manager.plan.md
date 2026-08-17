@@ -69,9 +69,9 @@ templates/default.md`; a permanent legacy fallback path rejected.
 - 2026-08-17 — Toolchain: node 22.x enforced by verify.sh (v22.23.1
   verified on the home machine), typescript 7.0.2, prettier 3.9.6,
   `@earendil-works/pi-coding-agent` 0.84.1.
-- These decisions are closed during implementation. O1 and O2 under
+- These decisions are closed during implementation. O1, O2, and O3 under
   Ratification items are the open owner items; O1 blocks P3.1, O2 blocks
-  P1.1. Ratification folds their rulings into this list.
+  P1.1, O3 blocks P2.2. Ratification folds their rulings into this list.
 
 ## Non-goals
 
@@ -793,6 +793,18 @@ Commit; build complete, hand to as-built pass.
   any placeholder fails open to the stock prompt, which protects against
   accidental deletion but forbids deliberate omission and contradicts
   "the template owns the prose". Recommendation: adopt (optional).
+- O3 (blocks: P2.2): the armed capture writes a raw `.txt` twin beside
+  the provider `.md`, holding the extracted system prompt bytes with no
+  header, so `sha256sum` on the file proves the basis's byte-identity
+  acceptance claim. DESIGN.md's Expected behaviors currently says the two
+  inspect artifacts are "both written as markdown files", which is
+  satisfied by the `.md` pair but does not mention the twin. Keeping: the
+  `.txt` twin plus a one-clause amendment to DESIGN.md ("...both written
+  as markdown files, with a raw text twin of the captured prompt for byte
+  comparison"). Rejecting: no `.txt`; the `.md` header would have to be
+  stripped by hand to check byte identity, and the acceptance test loses
+  its runnable procedure. Recommendation: adopt and amend DESIGN.md at
+  ratification.
 
 ## Stop rules
 
@@ -804,7 +816,8 @@ Commit; build complete, hand to as-built pass.
 
 ## Handoff notes
 
-- Entry point: P1.1 (after O2 is ruled; O1 before P3.1). Base commit:
+- Entry point: P1.1 (after O2 is ruled; O3 before P2.2; O1 before P3.1).
+  Base commit:
   `51a27ef47f90cb5399644e9f8d6c22b11b25197a` (contains DESIGN.md as
   ratified, the fixture, and this plan's draft).
 - Home machine: willow. Repo: `~/projects/pi-sysprompt-editor/main`,
@@ -912,3 +925,8 @@ input` return undefined on cancel; `pi.sendUserMessage` always triggers a
   and Test call stacks now name `makeStamp` and every `freeBase` call
   site, with armed/pending state holding the raw stamp and each artifact
   family resolving its own collision at write time.
+- Round 12: FAIL with one Medium —
+  `plans/2026-08-17-template-manager.lint-12.md`. Fixed: the provider
+  `.txt` twin had no Fixed-decisions row and DESIGN.md's Expected
+  behaviors did not mention it; opened ratification item O3 (blocks
+  P2.2) proposing the twin plus a one-clause DESIGN.md amendment.
