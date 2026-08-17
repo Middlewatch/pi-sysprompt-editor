@@ -112,7 +112,7 @@ export default function systemPromptExtension(
       ctx.ui.notify("no active template to copy", "warning");
       return;
     }
-    const created = scaffoldTemplate(templatesDir, name.trim(), active.content);
+    const created = scaffoldTemplate(templatesDir, name, active.content);
     if (created instanceof Error) {
       ctx.ui.notify(created.message, "error");
       return;

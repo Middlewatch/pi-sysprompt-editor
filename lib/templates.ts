@@ -13,16 +13,21 @@ const VALID_POINTER = /^[a-z0-9-]+\.md$/;
 
 /**
  * Templates in the directory: the resolved active template first (the one
- * the splice would actually use), then the rest alphabetically.
+ * the splice would actually use), then the rest alphabetically. Only files
+ * whose names the pointer grammar accepts are listed, so every listed name
+ * can become active.
  */
 export function listTemplates(dir: string): string[] {
-  let entries: string[];
+  let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(dir);
+    entries = fs.readdirSync(dir, { withFileTypes: true });
   } catch {
     return [];
   }
-  const names = entries.filter((n) => n.endsWith(".md")).sort();
+  const names = entries
+    .filter((e) => e.isFile() && VALID_POINTER.test(e.name))
+    .map((e) => e.name)
+    .sort();
   const active = readActiveTemplate(dir)?.name;
   if (active !== undefined) {
     const i = names.indexOf(active);
@@ -66,9 +71,29 @@ export function readActiveTemplate(
   return null;
 }
 
-/** Write the pointer file naming `name`. */
+/**
+ * Write the pointer file naming `name`. The write goes to a temp file in the
+ * same directory and is renamed over `.active`, so a concurrent reader sees
+ * either the old pointer or the new one, never a truncated file. Concurrent
+ * switches are last-writer-wins.
+ */
 export function setActiveTemplate(dir: string, name: string): void {
-  fs.writeFileSync(path.join(dir, POINTER_FILE), name + "\n", "utf8");
+  const target = path.join(dir, POINTER_FILE);
+  const tmp = path.join(
+    dir,
+    `${POINTER_FILE}.${process.pid}.${Date.now()}.tmp`,
+  );
+  fs.writeFileSync(tmp, name + "\n", "utf8");
+  try {
+    fs.renameSync(tmp, target);
+  } catch (err) {
+    try {
+      fs.unlinkSync(tmp);
+    } catch {
+      // nothing to clean
+    }
+    throw err;
+  }
 }
 
 const VALID_NAME = /^[a-z0-9-]+$/;

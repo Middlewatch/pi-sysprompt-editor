@@ -58,6 +58,15 @@ test("stock prompt is rebuilt from the template with the tail preserved", async 
       .replaceAll("{{PI_DOCS}}", DOCS)
       .trimEnd() + TAIL;
   assert.equal(result.systemPrompt, expected);
+  // The tail split also honours the skills-only and cwd-only shapes.
+  const rendered = expected.slice(0, -TAIL.length);
+  for (const tail of [
+    "\n<available_skills>\n  <skill>x</skill>\n</available_skills>\nCurrent working directory: /tmp",
+    "\nCurrent working directory: /tmp",
+  ]) {
+    const r = await capturedHandler()({ systemPrompt: STOCK_CORE + tail });
+    assert.equal(r?.systemPrompt, rendered + tail);
+  }
 });
 
 test("an active SYSTEM.md custom prompt is left untouched", async () => {

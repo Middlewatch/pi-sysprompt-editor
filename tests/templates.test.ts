@@ -117,7 +117,9 @@ test("list: active template sorts first", () => {
     "alpha.md": "A",
     "zeta.md": "Z",
     "notes.txt": "ignored",
+    "Bad Name.md": "not pointer-valid, never listed",
   });
+  fs.mkdirSync(path.join(dir, "subdir.md"));
   assert.deepEqual(listTemplates(dir), ["default.md", "alpha.md", "zeta.md"]);
   setActiveTemplate(dir, "zeta.md");
   assert.deepEqual(listTemplates(dir), ["zeta.md", "alpha.md", "default.md"]);

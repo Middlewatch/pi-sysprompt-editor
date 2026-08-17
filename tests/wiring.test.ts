@@ -177,6 +177,18 @@ test("wiring: unknown argument notifies usage and does nothing", async () => {
   ]);
   assert.equal(fs.existsSync(path.join(h.templatesDir, ".active")), false);
   assert.deepEqual(fs.readdirSync(h.artifactsDir), []);
+  // K5 placeholders: inspect and test are notify-only until their packets.
+  for (const action of ["inspect", "test"]) {
+    const k5 = stubUi({ select: () => "switch", input: () => "x" });
+    await h.command(action, k5.ctx);
+    assert.deepEqual(k5.selects, []);
+    assert.deepEqual(k5.inputs, []);
+    assert.deepEqual(k5.notices, [
+      { message: `${action}: not built yet`, type: "warning" },
+    ]);
+    assert.deepEqual(fs.readdirSync(h.artifactsDir), []);
+    assert.deepEqual(fs.readdirSync(h.templatesDir), ["default.md"]);
+  }
 });
 
 test("wiring: new with no active template notifies and creates nothing", async () => {
@@ -198,18 +210,26 @@ test("wiring: cancelled name input creates nothing", async () => {
   assert.deepEqual(ui.inputs, ["Template name:"]);
   assert.deepEqual(ui.notices, []);
   assert.deepEqual(fs.readdirSync(h.templatesDir), ["default.md"]);
-  // The happy path through the same wiring creates the copy and notifies.
+  // The happy path through the same wiring copies the *active* template
+  // (a non-default one, so copying default.md would fail this) and notifies.
+  seed(h.templatesDir, { "voice.md": "VOICE BYTES\n" });
+  fs.writeFileSync(path.join(h.templatesDir, ".active"), "voice.md\n");
   const ok = stubUi({ input: () => "fresh" });
   await h.command("new", ok.ctx);
   assert.equal(
     fs.readFileSync(path.join(h.templatesDir, "fresh.md"), "utf8"),
-    "D",
+    "VOICE BYTES\n",
   );
   assert.equal(ok.notices.length, 1);
   assert.match(
     ok.notices[0]!.message,
-    /created .*fresh\.md \(copy of default\.md\)/,
+    /created .*fresh\.md \(copy of voice\.md\)/,
   );
+  // Surrounding whitespace is not trimmed: the raw input must match the grammar.
+  const padded = stubUi({ input: () => " padded " });
+  await h.command("new", padded.ctx);
+  assert.equal(padded.notices[0]?.type, "error");
+  assert.equal(fs.existsSync(path.join(h.templatesDir, "padded.md")), false);
   // A second attempt with the same name is refused at the wiring level.
   const dup = stubUi({ input: () => "fresh" });
   await h.command("new", dup.ctx);
