@@ -111,3 +111,26 @@ CONTRACT AMENDMENT, or K/R resolution, newest last.
 - verify.sh: exit 0, 28 pass, 0 fail.
 - Falsification witness: red on dropping the skills section from the
   renderer (tests 21 and 45 fail), green on revert.
+
+## 2026-08-17 — P2.2 Armed ground-truth capture
+
+- `extractSystemPromptFromPayload`: `system` string, `system` text-block
+  array (joined `\n\n`, empty array → null), `messages[0]` role
+  `system`/`developer` with string or text-block content; else null.
+  `renderProviderDump`: header + fenced prompt when recognized; note +
+  ```json fence with `JSON.stringify(payload, null, 2)` when not; note +
+  `String(payload)` unfenced when stringify throws (or returns non-string).
+- `before_provider_request` handler: `takeArmedCapture` (null → return, no
+  replacement ever returned), `modelLabel(ctx.model)`, `freeBase(...,
+  [".md", ".txt"])`, writes `.md` then `.txt` only when extraction
+  succeeded, notifies both paths with `sha256:<12 hex>` of the txt bytes;
+  unrecognized shape notifies a warning naming the `.md` only; any write
+  failure notifies at level error (state already cleared by the take).
+- Golden `fixtures/golden/provider-dump.{input.json,md}` blessed from the
+  pinned input (system prompt containing a triple-backtick run so the fence
+  is four; trailing `\n` preserved). Checked line by line against the plan.
+- Tests 22–26, 31, 41 (inspect); 19, 34 (wiring).
+- verify.sh: exit 0, 37 pass, 0 fail.
+- Falsification witnesses: red on returning txt for a null extraction
+  (tests 26, 41, and 19 fail); red on dropping the `.txt` write (test 19
+  fails); green on revert of each.

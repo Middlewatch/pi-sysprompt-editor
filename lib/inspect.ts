@@ -105,6 +105,91 @@ export function renderImmediateDump(options: BuildSystemPromptOptions): string {
   ].join("\n");
 }
 
+export interface DumpHeader {
+  timestamp: string;
+  provider: string;
+  modelId: string;
+}
+
+/** Text blocks joined with a blank line; null when the array has none. */
+function joinTextBlocks(blocks: unknown): string | null {
+  if (!Array.isArray(blocks)) return null;
+  const texts: string[] = [];
+  for (const block of blocks) {
+    if (
+      block !== null &&
+      typeof block === "object" &&
+      typeof (block as { text?: unknown }).text === "string"
+    ) {
+      texts.push((block as { text: string }).text);
+    }
+  }
+  return texts.length === 0 ? null : texts.join("\n\n");
+}
+
+/**
+ * Pull the system prompt out of a provider payload. Recognizes an Anthropic
+ * style `system` (string or text-block array) and an OpenAI style leading
+ * `messages[0]` with role `system` or `developer` (string or text-block
+ * content). Anything else is null.
+ */
+export function extractSystemPromptFromPayload(
+  payload: unknown,
+): string | null {
+  if (payload === null || typeof payload !== "object") return null;
+  const p = payload as { system?: unknown; messages?: unknown };
+  if (typeof p.system === "string") return p.system;
+  if (Array.isArray(p.system)) return joinTextBlocks(p.system);
+  if (Array.isArray(p.messages) && p.messages.length > 0) {
+    const first = p.messages[0] as { role?: unknown; content?: unknown };
+    if (
+      first !== null &&
+      typeof first === "object" &&
+      (first.role === "system" || first.role === "developer")
+    ) {
+      if (typeof first.content === "string") return first.content;
+      if (Array.isArray(first.content)) return joinTextBlocks(first.content);
+    }
+  }
+  return null;
+}
+
+function headerLines(title: string, header: DumpHeader): string {
+  return (
+    `# ${title}\n` +
+    "\n" +
+    `- timestamp: ${header.timestamp}\n` +
+    `- provider: ${header.provider}\n` +
+    `- model: ${header.modelId}\n`
+  );
+}
+
+/**
+ * The provider dump: `md` is the human-readable file, `txt` the raw
+ * extracted bytes (null when extraction failed, in which case `md` carries
+ * the JSON of the payload, or String(payload) if it cannot be stringified).
+ */
+export function renderProviderDump(
+  header: DumpHeader,
+  payload: unknown,
+): { md: string; txt: string | null } {
+  const head = headerLines("Provider system prompt (ground truth)", header);
+  const extracted = extractSystemPromptFromPayload(payload);
+  if (extracted !== null) {
+    return { md: `${head}\n${fenced(extracted)}`, txt: extracted };
+  }
+  const note = "Unrecognized payload shape; raw payload follows.\n";
+  let body: string;
+  try {
+    const json = JSON.stringify(payload, null, 2);
+    if (typeof json !== "string") throw new TypeError("not serializable");
+    body = fenced(json, "json");
+  } catch {
+    body = `${String(payload)}\n`;
+  }
+  return { md: `${head}\n${note}\n${body}`, txt: null };
+}
+
 // One-shot armed capture state: the raw stamp of the pending inspect, taken
 // once by the next provider request.
 let armed: string | null = null;

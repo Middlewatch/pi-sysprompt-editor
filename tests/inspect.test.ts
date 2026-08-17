@@ -10,10 +10,12 @@ import * as path from "node:path";
 import test from "node:test";
 import {
   armCapture,
+  extractSystemPromptFromPayload,
   freeBase,
   makeStamp,
   modelLabel,
   renderImmediateDump,
+  renderProviderDump,
   takeArmedCapture,
 } from "../lib/inspect.ts";
 
@@ -80,4 +82,113 @@ test("arm: capture is one-shot", () => {
   armCapture("b");
   assert.equal(takeArmedCapture(), "b");
   assert.equal(takeArmedCapture(), null);
+});
+
+const HEADER = {
+  timestamp: "2026-01-01-000000",
+  provider: "p",
+  modelId: "m",
+};
+
+test("extract: anthropic string system", () => {
+  const payload = { model: "x", system: "SYS\nline two", messages: [] };
+  assert.equal(extractSystemPromptFromPayload(payload), "SYS\nline two");
+  const dump = renderProviderDump(HEADER, payload);
+  assert.equal(dump.txt, "SYS\nline two");
+  assert.match(dump.md, /^# Provider system prompt \(ground truth\)\n/);
+});
+
+test("extract: anthropic block-array system", () => {
+  const payload = {
+    system: [
+      { type: "text", text: "Block one" },
+      { type: "text", text: "Block two", cache_control: { type: "ephemeral" } },
+    ],
+  };
+  assert.equal(
+    extractSystemPromptFromPayload(payload),
+    "Block one\n\nBlock two",
+  );
+  // An empty block array is unrecognized rather than an empty prompt.
+  assert.equal(extractSystemPromptFromPayload({ system: [] }), null);
+});
+
+test("extract: openai system message", () => {
+  const payload = {
+    messages: [
+      { role: "system", content: "SYS" },
+      { role: "user", content: "hi" },
+    ],
+  };
+  assert.equal(extractSystemPromptFromPayload(payload), "SYS");
+  const blocks = {
+    messages: [
+      {
+        role: "system",
+        content: [
+          { type: "text", text: "A" },
+          { type: "text", text: "B" },
+        ],
+      },
+    ],
+  };
+  assert.equal(extractSystemPromptFromPayload(blocks), "A\n\nB");
+});
+
+test("extract: openai developer message", () => {
+  const payload = { messages: [{ role: "developer", content: "DEV" }] };
+  assert.equal(extractSystemPromptFromPayload(payload), "DEV");
+  // A leading user message is not a system prompt.
+  assert.equal(
+    extractSystemPromptFromPayload({
+      messages: [{ role: "user", content: "x" }],
+    }),
+    null,
+  );
+});
+
+test("extract: unrecognized payload returns null and md falls back to JSON", () => {
+  const payload = { input: "something else", tools: [] };
+  assert.equal(extractSystemPromptFromPayload(payload), null);
+  const dump = renderProviderDump(HEADER, payload);
+  assert.equal(dump.txt, null);
+  assert.equal(
+    dump.md,
+    "# Provider system prompt (ground truth)\n\n" +
+      "- timestamp: 2026-01-01-000000\n- provider: p\n- model: m\n\n" +
+      "Unrecognized payload shape; raw payload follows.\n\n" +
+      "```json\n" +
+      JSON.stringify(payload, null, 2) +
+      "\n```\n",
+  );
+  for (const odd of [null, undefined, 42, "text", []]) {
+    assert.equal(extractSystemPromptFromPayload(odd), null);
+    assert.equal(renderProviderDump(HEADER, odd).txt, null);
+  }
+});
+
+test("extract: stringify-throwing payload renders the note plus String(payload)", () => {
+  const payload: Record<string, unknown> = { input: "x" };
+  payload.self = payload; // circular: JSON.stringify throws
+  const dump = renderProviderDump(HEADER, payload);
+  assert.equal(dump.txt, null);
+  assert.equal(
+    dump.md,
+    "# Provider system prompt (ground truth)\n\n" +
+      "- timestamp: 2026-01-01-000000\n- provider: p\n- model: m\n\n" +
+      "Unrecognized payload shape; raw payload follows.\n\n" +
+      "[object Object]\n",
+  );
+  assert.ok(!dump.md.includes("```"), "no fence in the String fallback");
+});
+
+test("provider dump: golden byte-compare", () => {
+  const { input, expected } = golden("provider-dump");
+  const { header, payload } = input as {
+    header: typeof HEADER;
+    payload: unknown;
+  };
+  const dump = renderProviderDump(header, payload);
+  assert.equal(dump.md, expected);
+  assert.equal(dump.txt, (payload as { system: string }).system);
 });

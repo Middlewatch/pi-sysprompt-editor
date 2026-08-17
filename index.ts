@@ -19,6 +19,7 @@
  * no template resolves (pointer and default.md both unusable), the prompt is
  * left exactly as Pi built it.
  */
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,7 +31,10 @@ import {
   armCapture,
   freeBase,
   makeStamp,
+  modelLabel,
   renderImmediateDump,
+  renderProviderDump,
+  takeArmedCapture,
 } from "./lib/inspect.ts";
 import { renderTemplate, splitTail } from "./lib/splice.ts";
 import {
@@ -139,6 +143,52 @@ export default function systemPromptExtension(
       return err instanceof Error ? err.message : String(err);
     }
   }
+
+  pi.on("before_provider_request", async (event: any, ctx: any) => {
+    const stamp = takeArmedCapture();
+    if (stamp === null) return;
+    if (artifactsDir === null) {
+      ctx.ui.notify("artifacts directory could not be resolved", "error");
+      return;
+    }
+    const inspectDir = path.join(artifactsDir, "inspect");
+    const { provider, modelId } = modelLabel(ctx.model);
+    let dump: { md: string; txt: string | null };
+    try {
+      dump = renderProviderDump(
+        { timestamp: stamp, provider, modelId },
+        event.payload,
+      );
+    } catch (err) {
+      ctx.ui.notify(err instanceof Error ? err.message : String(err), "error");
+      return;
+    }
+    const base = path.join(
+      inspectDir,
+      freeBase(inspectDir, `${stamp}-provider`, [".md", ".txt"]),
+    );
+    const mdFailure = writeArtifact(`${base}.md`, dump.md);
+    if (mdFailure !== null) {
+      ctx.ui.notify(mdFailure, "error");
+      return;
+    }
+    if (dump.txt === null) {
+      ctx.ui.notify(
+        `wrote ${base}.md (payload shape unrecognized; no .txt written)`,
+        "warning",
+      );
+      return;
+    }
+    const txtFailure = writeArtifact(`${base}.txt`, dump.txt);
+    if (txtFailure !== null) {
+      ctx.ui.notify(txtFailure, "error");
+      return;
+    }
+    const sha = createHash("sha256").update(dump.txt, "utf8").digest("hex");
+    ctx.ui.notify(
+      `wrote ${base}.md and ${base}.txt sha256:${sha.slice(0, 12)}`,
+    );
+  });
 
   async function actionInspect(ctx: ExtensionCommandContext): Promise<void> {
     if (artifactsDir === null) {

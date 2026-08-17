@@ -10,7 +10,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import test from "node:test";
 import systemPromptExtension, { type ExtensionPaths } from "../index.ts";
-import { takeArmedCapture } from "../lib/inspect.ts";
+import { createHash } from "node:crypto";
+import { armCapture, takeArmedCapture } from "../lib/inspect.ts";
 
 type Handler = (event: any, ctx: any) => Promise<any>;
 
@@ -286,5 +287,77 @@ test("wiring: immediate dump write failure notifies error and does not arm", asy
   assert.equal(ui.notices.length, 1);
   assert.equal(ui.notices[0]!.type, "error");
   assert.equal(takeArmedCapture(), null, "nothing armed");
+  assert.equal(fs.readFileSync(blocker, "utf8"), "not a directory");
+});
+
+test("wiring: armed capture writes provider md and raw txt with payload bytes", async () => {
+  const h = harness();
+  const hook = h.handlers.get("before_provider_request");
+  assert.ok(hook, "before_provider_request registered");
+  const system = "GROUND TRUTH\n\n<injected>by another extension</injected>\n";
+  const payload = { system, messages: [{ role: "user", content: "go" }] };
+  const model = { provider: "anthropic", id: "claude-x" };
+  // Not armed: the hook does nothing and returns no replacement.
+  takeArmedCapture();
+  const idle = stubUi({ model });
+  assert.equal(await hook({ payload }, idle.ctx), undefined);
+  assert.equal(fs.existsSync(path.join(h.artifactsDir, "inspect")), false);
+  assert.equal(idle.notices.length, 0);
+  // Armed: one md + txt pair, txt bytes equal the payload's system string.
+  const ui = stubUi({ model });
+  armCapture("2026-01-02-030405");
+  assert.equal(await hook({ payload }, ui.ctx), undefined);
+  const inspectDir = path.join(h.artifactsDir, "inspect");
+  assert.deepEqual(fs.readdirSync(inspectDir).sort(), [
+    "2026-01-02-030405-provider.md",
+    "2026-01-02-030405-provider.txt",
+  ]);
+  const txt = fs.readFileSync(
+    path.join(inspectDir, "2026-01-02-030405-provider.txt"),
+  );
+  assert.equal(txt.toString("utf8"), system);
+  const md = fs.readFileSync(
+    path.join(inspectDir, "2026-01-02-030405-provider.md"),
+    "utf8",
+  );
+  assert.match(
+    md,
+    /^# Provider system prompt \(ground truth\)\n\n- timestamp: 2026-01-02-030405\n- provider: anthropic\n- model: claude-x\n/,
+  );
+  assert.ok(md.includes(system));
+  const sha = createHash("sha256").update(txt).digest("hex").slice(0, 12);
+  assert.equal(ui.notices.length, 1);
+  assert.equal(ui.notices[0]!.type, undefined);
+  assert.ok(
+    ui.notices[0]!.message.endsWith(`sha256:${sha}`),
+    ui.notices[0]!.message,
+  );
+  // The capture was one-shot.
+  assert.equal(await hook({ payload }, ui.ctx), undefined);
+  assert.equal(fs.readdirSync(inspectDir).length, 2);
+  // Unrecognized payload: md only, warning, no txt; the pair shares one suffix.
+  armCapture("2026-01-02-030405");
+  const warn = stubUi({});
+  await hook({ payload: { weird: true } }, warn.ctx);
+  assert.deepEqual(fs.readdirSync(inspectDir).sort(), [
+    "2026-01-02-030405-provider-2.md",
+    "2026-01-02-030405-provider.md",
+    "2026-01-02-030405-provider.txt",
+  ]);
+  assert.equal(warn.notices[0]!.type, "warning");
+  assert.equal(takeArmedCapture(), null);
+});
+
+test("wiring: artifact write failure notifies error and clears capture state", async () => {
+  const blocker = path.join(tempDir("blocker"), "artifacts");
+  fs.writeFileSync(blocker, "not a directory");
+  const h = harness({ artifactsDir: blocker });
+  const hook = h.handlers.get("before_provider_request")!;
+  armCapture("2026-01-02-030405");
+  const ui = stubUi({});
+  await assert.doesNotReject(hook({ payload: { system: "S" } }, ui.ctx));
+  assert.equal(ui.notices.length, 1);
+  assert.equal(ui.notices[0]!.type, "error");
+  assert.equal(takeArmedCapture(), null, "capture state cleared");
   assert.equal(fs.readFileSync(blocker, "utf8"), "not a directory");
 });
