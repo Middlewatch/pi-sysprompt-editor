@@ -1,0 +1,4 @@
+# Plans carry the packet field format the execute skill parses, and
+# fixtures must stay byte-stable for golden and output-test comparability.
+plans/
+fixtures/

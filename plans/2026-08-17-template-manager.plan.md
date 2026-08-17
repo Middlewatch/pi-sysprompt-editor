@@ -36,7 +36,7 @@ byte copy of the active template`.
   stock shape, unrecognized payload shape) leaves the prompt or artifact in
   the documented fallback state. Verified by named unit tests, one per
   branch.
-- `scripts/verify.sh` exits 0 with 30 unit tests passing, 0 failing.
+- `scripts/verify.sh` exits 0 with 31 unit tests passing, 0 failing.
 
 ## Fixed decisions
 
@@ -97,7 +97,7 @@ Green is: node 22.x asserted, `npm ci` clean, `prettier --check` clean,
 `tsc --noEmit` clean, `node --experimental-strip-types --test
 tests/*.test.ts` all pass, 0 fail. Test count by packet: baseline 4
 (existing `tests/rewrite.test.ts`), P1.1 → 6, P1.2 → 12, P1.3 → 14,
-P1.4 → 17, P2.1 → 19, P2.2 → 26, P3.1 → 30. Live checks that need a real
+P1.4 → 17, P2.1 → 19, P2.2 → 27, P3.1 → 31. Live checks that need a real
 session are phase gate eye checks, named in each phase gate, and are not
 part of verify.sh.
 
@@ -122,7 +122,8 @@ part of verify.sh.
 - `lib/output-test.ts` — pinned test prompt assembly, result filename,
   result formatting and writing.
 - `templates/default.md` — the current `SYSTEM.template.md`, moved by
-  `git mv` (checkpoint D1).
+  `git mv` (checkpoint D1); the source path `SYSTEM.template.md` ceases to
+  exist at P1.2.
 - `templates/.active` — gitignored one-line pointer file naming a template
   filename, e.g. `default.md`.
 - `fixtures/output-test-document.md` — exists, committed at base.
@@ -174,6 +175,22 @@ part of verify.sh.
 - Placeholders are optional in a template: an absent placeholder means the
   owner omitted that section deliberately, and `replaceAll` no-ops
   (subject to R2).
+- Empty-store behaviors: `switch` with zero listed templates notifies
+  "no templates found" and exits; `new` when `readActiveTemplate` returns
+  null notifies "no active template to copy" and exits.
+- Artifact-write failure (mkdir or write throws): notify the error message
+  at level "error", clear any armed/pending capture state, never throw out
+  of a handler.
+- Assistant text extraction: the result body is the assistant message's
+  text blocks (`content` items with `type === "text"`) joined with
+  `"\n\n"`; non-text blocks are ignored.
+- Template attribution: index.ts keeps module state
+  `lastRender: { name: string; sha256: string } | null`, written by every
+  `before_agent_start` (the applied template's name and content sha256, or
+  null when any stand-down or fail-open branch left the stock prompt). The
+  output-test result header reads `lastRender` at `turn_end`, so it
+  records what actually rendered on the test turn rather than what was
+  active at command time.
 - File format, provider dump `.md`: H1 header block (timestamp,
   provider/model), then the extracted system prompt verbatim inside a
   fenced block. Unrecognized payload shape: a note line, then
@@ -283,10 +300,12 @@ null: return → `renderProviderDump(header, event.payload)` → write `.md`
 handler never returns a payload replacement.
 
 Test: command handler → read fixture (missing: notify, stop) → record
-pending {stamp, provider, modelId, activeTemplate, templateSha256} →
-`pi.sendUserMessage(buildTestMessage(...))` → `turn_end` handler →
-pending set: `formatResult(header, event.message text)` → write result
-file → clear pending → notify path.
+pending {stamp, provider, modelId} →
+`pi.sendUserMessage(buildTestMessage(...))` → (that turn's
+`before_agent_start` sets `lastRender` as on every turn) → `turn_end`
+handler → pending set: header from pending + `lastRender` (null →
+`"(stock)"`, no sha line) → `formatResult(header, <text blocks joined>)`
+→ write result file → clear pending → notify path.
 
 ### Test plan
 
@@ -337,6 +356,9 @@ default export against a stub ExtensionAPI; 2 in P1.3 (16–17), 1 in P2.1
 25. `extract: openai developer message`
 26. `extract: unrecognized payload returns null and md falls back to JSON`
 27. `arm: capture is one-shot`
+31. `provider dump: golden byte-compare` (against
+    `fixtures/golden/provider-dump.md`, covering the header and fenced
+    prompt serialization)
 
 `tests/output-test.test.ts` — 3 in P3.1 (28–30):
 
@@ -346,10 +368,10 @@ default export against a stub ExtensionAPI; 2 in P1.3 (16–17), 1 in P2.1
     `fixtures/golden/output-test-result.md`, covering header with template
     name and sha256)
 
-Count reconciliation: 4 existing + 26 new = 30 at completion. Per packet:
+Count reconciliation: 4 existing + 27 new = 31 at completion. Per packet:
 P1.1 adds 5–6 (→ 6), P1.2 adds 7–12 (→ 12), P1.3 adds 16–17 (→ 14), P1.4
-adds 13–15 (→ 17), P2.1 adds 18 and 21 (→ 19), P2.2 adds 19 and 22–27
-(→ 26), P3.1 adds 20 and 28–30 (→ 30). These are the totals the
+adds 13–15 (→ 17), P2.1 adds 18 and 21 (→ 19), P2.2 adds 19, 22–27, and
+31 (→ 27), P3.1 adds 20 and 28–30 (→ 31). These are the totals the
 Verification contract pins.
 
 ### Least confident decisions
@@ -380,9 +402,9 @@ replaceAll turns test 5 red.
 
 ### P1.2 — Template store, pointer resolution, migration
 
-Files: lib/templates.ts, index.ts, templates/default.md (git mv from
-SYSTEM.template.md), .gitignore, tests/templates.test.ts,
-tests/rewrite.test.ts
+Files: lib/templates.ts, index.ts, SYSTEM.template.md (removed by git mv),
+templates/default.md (the moved destination), .gitignore,
+tests/templates.test.ts, tests/rewrite.test.ts
 Changes: `git mv SYSTEM.template.md templates/default.md`. Add
 lib/templates.ts per the pinned signatures: pointer file is
 `<dir>/.active`, validity rule as pinned in Interfaces,
@@ -402,8 +424,8 @@ readActiveTemplate throw on a missing pointer file turns test
 Files: index.ts, tests/wiring.test.ts
 Changes: Register command `sysprompt` (description: "Manage system
 prompt templates"). No args: `ctx.ui.select` over `switch`,
-`new`, `inspect`, `test`; `inspect` and `test` notify "not
-built yet" until P2.1/P3.1 replace them (carried as K5). Arg
+`new`, `inspect`, `test`; `new`, `inspect`, and `test` notify "not
+built yet" until P1.4/P2.1/P3.1 replace them (carried as K5). Arg
 matching an action jumps straight to it; unknown arg notifies
 usage. `switch` per the pinned Interfaces flow. Esc at any
 picker cancels with no write.
@@ -463,14 +485,15 @@ inspect action arms after the immediate dump and notifies
 (checkpoint D4). `before_provider_request` handler per the
 pinned call stack: extraction rules, `.md` + `.txt` pair,
 JSON fallback, sha256-prefixed notify, no payload replacement.
-Acceptance: verify.sh green; 26 pass, 0 fail (adds tests 19 and 22–27);
-test 19 asserts the `.txt` bytes equal the synthetic payload's
-system string exactly. Falsification witness: making
+Acceptance: verify.sh green; 27 pass, 0 fail (adds tests 19, 22–27, and
+31); test 19 asserts the `.txt` bytes equal the synthetic payload's
+system string exactly, and test 31 byte-compares the `.md` serialization
+against its golden. Falsification witness: making
 takeArmedCapture return the stamp twice turns test 27 red.
 
 ### Phase 2 gate
 
-Runnable: verify.sh green, 26 unit tests pass, 0 fail.
+Runnable: verify.sh green, 27 unit tests pass, 0 fail.
 Eye check: in a live session with at least one other prompt-touching
 extension loaded, `/sysprompt inspect` then one message writes all three
 files; `sha256sum <stamp>-provider.txt` matches the notified hash prefix
@@ -492,14 +515,16 @@ fixtures/output-test-document.md (read-only dependency)
 Changes: lib/output-test.ts per the pinned signatures and formats
 (OUTPUT_TEST_PROMPT frozen per D3; templateSha256 per R1). The
 `test` action (replacing the K5 placeholder) per the pinned
-call stack; modelId and provider sanitized per Interfaces.
-Acceptance: verify.sh green; 30 pass, 0 fail (adds tests 20 and 28–30).
-Falsification witness: changing OUTPUT_TEST_PROMPT wording
-turns test 28 red.
+call stack; attribution via `lastRender` per Interfaces; modelId and
+provider sanitized per Interfaces.
+Acceptance: verify.sh green; 31 pass, 0 fail (adds tests 20 and 28–30);
+test 20 drives a stub turn where before_agent_start failed open and
+asserts the header records `(stock)` with no sha line. Falsification
+witness: changing OUTPUT_TEST_PROMPT wording turns test 28 red.
 
 ### Phase 3 gate
 
-Runnable: verify.sh green, 30 unit tests pass, 0 fail.
+Runnable: verify.sh green, 31 unit tests pass, 0 fail.
 Eye check: one live `/sysprompt test` run produces a results file whose
 header names the active template, its sha256, and the current model, and
 whose body is the model's summary; owner eyeballs it as the first corpus
@@ -526,9 +551,9 @@ Commit; build complete, hand to as-built pass.
   becomes a new recognizer via CONTRACT AMENDMENT.
 - K4: the fixture document rides every test run's context. Accepted:
   comparability requires the full document.
-- K5: P1.3 ships `inspect` and `test` menu entries as "not built yet"
-  notifies. Owned by P2.1 and P3.1, which replace them; the Phase 1 review
-  checks they are inert.
+- K5: P1.3 ships `new`, `inspect`, and `test` menu entries as "not built yet"
+  notifies. Owned by P1.4, P2.1, and P3.1, which replace them; the Phase 1
+  review checks they are inert.
 
 ## Ratification items
 
@@ -591,3 +616,14 @@ input` return undefined on cancel; `pi.sendUserMessage` always triggers a
   set; full 40-char base SHA pinned; node version pinned; K5 added for
   menu placeholders; stamp/sanitization/pointer-validity/JSON-fallback
   rules pinned in Interfaces.
+- Round 2: FAIL with materials —
+  `plans/2026-08-17-template-manager.lint-2.md`. Fixed: splice-outcome
+  attribution pinned (`lastRender` module state set by every
+  before_agent_start; result header reads it at turn_end, tested by test
+  20's stock case); DESIGN.md scaffold wording amended to match owner
+  ruling D2; P1.3's interim `new` pinned as not-built-yet and K5 widened;
+  provider-dump golden given its own test 31 (totals rederived, 31 final);
+  migration source added to P1.2 Files and Layout; empty-store,
+  artifact-write-failure, and assistant-text-extraction behaviors pinned
+  in Interfaces; plans/ and fixtures/ exempted from prettier so packet
+  fields and fixture bytes stay stable.
