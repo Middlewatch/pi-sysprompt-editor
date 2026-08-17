@@ -427,7 +427,7 @@ Every header written through the wiring uses `modelLabel`, so the
     name and sha256)
 35. `result: assistant text blocks joined, non-text blocks ignored`
 
-Count reconciliation: 4 existing + 34 new = 38 at completion. Per packet:
+Count reconciliation: 4 existing + 35 new = 39 at completion. Per packet:
 P1.1 adds 5–6 (→ 6), P1.2 adds 7–12 (→ 12), P1.3 adds 16, 17, 32 (→ 15),
 P1.4 adds 13–15 and 33 (→ 19), P2.1 adds 18, 21, 38, 39 (→ 23), P2.2
 adds 19, 22–27, 31, 34 (→ 32), P3.1 adds 20, 28–30, 35–37 (→ 39). These
@@ -731,3 +731,7 @@ input` return undefined on cancel; `pi.sendUserMessage` always triggers a
   `BuildSystemPromptOptions`; undefined `ctx.model` pinned to `unknown`
   via `modelLabel` with test 39 in P2.1 (39 final); ratification items
   renamed O1/O2 to stop colliding with the Basis R1/R2 rows.
+- Round 7: FAIL with one Medium —
+  `plans/2026-08-17-template-manager.lint-7.md`. Fixed: the count
+  reconciliation line still said 34 new = 38; corrected to 35 new = 39.
+  Everything else verified clean.
