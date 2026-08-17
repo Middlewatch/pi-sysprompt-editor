@@ -179,3 +179,26 @@ CONTRACT AMENDMENT, or K/R resolution, newest last.
   waves. Owner also ruled: continue to P3.1 with the Phase 2 eye check
   running in parallel.
 - verify.sh: exit 0, 37 pass, 0 fail (`verify-125342.log`).
+
+## 2026-08-17 — P3.1 Output test action
+
+- `lib/output-test.ts`: `OUTPUT_TEST_PROMPT` (D3), `buildTestMessage`,
+  `resultBase` (sanitize `[^A-Za-z0-9._-]` → `-`), `formatResult` per the
+  pinned layout (`(stock)` omits the sha line), `assistantText`.
+- index.ts: `lastRender` set on every `before_agent_start` (null on every
+  stand-down/fail-open branch, `{name, sha256}` on a successful splice);
+  `test` action reads the fixture (unreadable → error notify, nothing
+  sent), records the pending `{stamp, provider, modelId}`, calls
+  `pi.sendUserMessage(buildTestMessage(...))`; `turn_end` consumes the
+  pending capture, formats with `lastRender`, resolves collision via
+  `freeBase(outputTestsDir, resultBase(...), [".md"])`, writes, notifies;
+  write failure notifies error with pending cleared.
+- Golden `fixtures/golden/output-test-result.{input.json,md}` blessed from
+  the pinned input; checked line by line against the plan's format block.
+- Tests 28–30, 35 (`tests/output-test.test.ts`); 20, 36, 37, 42
+  (`tests/wiring.test.ts`). Test 40's K5 loop removed (no placeholders
+  remain).
+- verify.sh: exit 0, 45 pass, 0 fail (`verify-125559.log`).
+- Falsification witness: red on changing OUTPUT_TEST_PROMPT wording (tests
+  28 and 20 fail), green on revert.
+- K5 RESOLVED — all three placeholders replaced (P1.4, P2.1, P3.1).

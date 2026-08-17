@@ -36,6 +36,12 @@ import {
   renderProviderDump,
   takeArmedCapture,
 } from "./lib/inspect.ts";
+import {
+  assistantText,
+  buildTestMessage,
+  formatResult,
+  resultBase,
+} from "./lib/output-test.ts";
 import { renderTemplate, splitTail } from "./lib/splice.ts";
 import {
   listTemplates,
@@ -76,8 +82,23 @@ export default function systemPromptExtension(
 ): void {
   const templatesDir = paths.templatesDir ?? resolvePath("./templates/");
   const artifactsDir = paths.artifactsDir ?? resolvePath("../artifacts/");
+  const fixturePath =
+    paths.fixturePath ?? resolvePath("./fixtures/output-test-document.md");
+
+  // What the last before_agent_start actually applied: the template's name
+  // and content sha256, or null when a stand-down or fail-open branch left
+  // the stock prompt. The output-test result header reads it at turn_end.
+  let lastRender: { name: string; sha256: string } | null = null;
+
+  // Output test awaiting its turn_end.
+  let pendingTest: {
+    stamp: string;
+    provider: string;
+    modelId: string;
+  } | null = null;
 
   pi.on("before_agent_start", async (event: any) => {
+    lastRender = null;
     const prompt: string = event.systemPrompt ?? "";
     if (event.systemPromptOptions?.customPrompt) return; // SYSTEM.md wins
     if (!prompt.startsWith(STOCK_FIRST_LINE)) return; // already rewritten or non-stock
@@ -89,6 +110,10 @@ export default function systemPromptExtension(
     const [core, tail] = splitTail(prompt);
     const rendered = renderTemplate(active.content, core);
     if (rendered === null) return; // shape drifted: fail open
+    lastRender = {
+      name: active.name,
+      sha256: createHash("sha256").update(active.content, "utf8").digest("hex"),
+    };
     return { systemPrompt: rendered + tail };
   });
 
@@ -190,7 +215,7 @@ export default function systemPromptExtension(
     );
   });
 
-  pi.on("turn_end", async (_event: any, ctx: any) => {
+  pi.on("turn_end", async (event: any, ctx: any) => {
     // Fail-safe for providers that never emit before_provider_request: a
     // capture still armed when the turn ends can never fire for the message
     // that was meant to trigger it, so disarm rather than let it attach to
@@ -202,7 +227,69 @@ export default function systemPromptExtension(
         "warning",
       );
     }
+
+    // Output test: the pending capture attaches to this turn's reply.
+    if (pendingTest === null) return;
+    const pending = pendingTest;
+    pendingTest = null;
+    if (artifactsDir === null) {
+      ctx.ui.notify("artifacts directory could not be resolved", "error");
+      return;
+    }
+    const outputTestsDir = path.join(artifactsDir, "output-tests");
+    let body: string;
+    try {
+      body = formatResult(
+        {
+          timestamp: pending.stamp,
+          provider: pending.provider,
+          modelId: pending.modelId,
+          activeTemplate: lastRender?.name ?? "(stock)",
+          templateSha256: lastRender?.sha256 ?? null,
+        },
+        assistantText(event?.message),
+      );
+    } catch (err) {
+      ctx.ui.notify(err instanceof Error ? err.message : String(err), "error");
+      return;
+    }
+    const file = path.join(
+      outputTestsDir,
+      freeBase(
+        outputTestsDir,
+        resultBase(pending.stamp, pending.provider, pending.modelId),
+        [".md"],
+      ) + ".md",
+    );
+    const failure = writeArtifact(file, body);
+    if (failure !== null) {
+      ctx.ui.notify(failure, "error");
+      return;
+    }
+    ctx.ui.notify(`wrote ${file}`);
   });
+
+  async function actionTest(ctx: ExtensionCommandContext): Promise<void> {
+    if (fixturePath === null) {
+      ctx.ui.notify("fixture path could not be resolved", "error");
+      return;
+    }
+    let fixture: string;
+    try {
+      fixture = fs.readFileSync(fixturePath, "utf8");
+    } catch (err) {
+      ctx.ui.notify(
+        `fixture unreadable: ${err instanceof Error ? err.message : String(err)}`,
+        "error",
+      );
+      return; // send nothing
+    }
+    const stamp = makeStamp(new Date());
+    const { provider, modelId } = modelLabel(ctx.model);
+    pendingTest = { stamp, provider, modelId };
+    pi.sendUserMessage(buildTestMessage(fixture));
+    ctx.ui.notify(`output test ${stamp} sent (${provider}/${modelId})`);
+  }
 
   async function actionInspect(ctx: ExtensionCommandContext): Promise<void> {
     if (artifactsDir === null) {
@@ -247,8 +334,7 @@ export default function systemPromptExtension(
       case "inspect":
         return actionInspect(ctx);
       case "test":
-        ctx.ui.notify(`${action}: not built yet`, "warning");
-        return;
+        return actionTest(ctx);
     }
   }
 

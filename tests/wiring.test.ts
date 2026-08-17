@@ -179,18 +179,6 @@ test("wiring: unknown argument notifies usage and does nothing", async () => {
   ]);
   assert.equal(fs.existsSync(path.join(h.templatesDir, ".active")), false);
   assert.deepEqual(fs.readdirSync(h.artifactsDir), []);
-  // K5 placeholder: test is notify-only until P3.1.
-  for (const action of ["test"]) {
-    const k5 = stubUi({ select: () => "switch", input: () => "x" });
-    await h.command(action, k5.ctx);
-    assert.deepEqual(k5.selects, []);
-    assert.deepEqual(k5.inputs, []);
-    assert.deepEqual(k5.notices, [
-      { message: `${action}: not built yet`, type: "warning" },
-    ]);
-    assert.deepEqual(fs.readdirSync(h.artifactsDir), []);
-    assert.deepEqual(fs.readdirSync(h.templatesDir), ["default.md"]);
-  }
 });
 
 test("wiring: new with no active template notifies and creates nothing", async () => {
@@ -429,4 +417,131 @@ test("wiring: artifact write failure notifies error and clears capture state", a
   assert.equal(txtFail.notices[0]!.type, "error");
   assert.match(txtFail.notices[0]!.message, /ENOENT/);
   assert.equal(takeArmedCapture(), null);
+});
+
+const STOCK_CORE =
+  "You are an expert coding assistant operating inside pi, a coding agent harness. Intro.\n\n" +
+  "Available tools:\n- read: Read\n\n" +
+  "In addition to the tools above, more.\n\n" +
+  "Guidelines:\n- Be concise\n\n" +
+  "Pi documentation (read only when asked):\n- Main: /tmp/README.md";
+
+const REPLY = {
+  role: "assistant",
+  content: [
+    { type: "text", text: "Summary line one." },
+    { type: "toolCall", id: "t", name: "read", arguments: {} },
+    { type: "text", text: "Summary line two." },
+  ],
+};
+
+/** Write a fixture file and return its path. */
+function fixtureFile(content = "# Article\n\nBody.\n"): string {
+  const file = path.join(tempDir("fixture"), "doc.md");
+  fs.writeFileSync(file, content, "utf8");
+  return file;
+}
+
+test("wiring: turn_end with pending capture writes the result file", async () => {
+  const fixture = fixtureFile();
+  const h = harness({ fixturePath: fixture });
+  // No template resolves in the empty templates dir, so the splice fails
+  // open on the test turn and the header must say (stock) with no sha.
+  const model = { provider: "anthropic", id: "claude-x" };
+  const ui = stubUi({ model });
+  await h.command("test", ui.ctx);
+  assert.deepEqual(h.sent, [
+    "Summarize this article for me.\n\n---\n\n# Article\n\nBody.\n",
+  ]);
+  assert.equal(ui.notices.length, 1);
+  assert.match(
+    ui.notices[0]!.message,
+    /^output test \d{4}-\d{2}-\d{2}-\d{6} sent \(anthropic\/claude-x\)$/,
+  );
+  const before = h.handlers.get("before_agent_start")!;
+  assert.equal(await before({ systemPrompt: STOCK_CORE }, ui.ctx), undefined);
+  const turnEnd = h.handlers.get("turn_end")!;
+  const endUi = stubUi({ model });
+  await turnEnd({ message: REPLY }, endUi.ctx);
+  const dir = path.join(h.artifactsDir, "output-tests");
+  const files = fs.readdirSync(dir);
+  assert.equal(files.length, 1);
+  assert.match(files[0]!, /^\d{4}-\d{2}-\d{2}-\d{6}-anthropic-claude-x\.md$/);
+  const stamp = files[0]!.slice(0, 17);
+  assert.equal(
+    fs.readFileSync(path.join(dir, files[0]!), "utf8"),
+    `# Output test\n\n- timestamp: ${stamp}\n- provider: anthropic\n- model: claude-x\n` +
+      "- template: (stock)\n\n---\n\nSummary line one.\n\nSummary line two.\n",
+  );
+  assert.deepEqual(endUi.notices, [
+    { message: `wrote ${path.join(dir, files[0]!)}`, type: undefined },
+  ]);
+  // The pending capture was consumed: a further turn_end writes nothing.
+  await turnEnd({ message: REPLY }, endUi.ctx);
+  assert.equal(fs.readdirSync(dir).length, 1);
+  assert.equal(endUi.notices.length, 1);
+});
+
+test("wiring: result header records the rendered template name and sha256", async () => {
+  const fixture = fixtureFile();
+  const h = harness({ fixturePath: fixture });
+  const templateBytes = "VOICE\n{{AVAILABLE_TOOLS}}\n";
+  seed(h.templatesDir, { "default.md": "D", "voice.md": templateBytes });
+  fs.writeFileSync(path.join(h.templatesDir, ".active"), "voice.md\n");
+  const model = { provider: "p", id: "m" };
+  await h.command("test", stubUi({ model }).ctx);
+  const before = h.handlers.get("before_agent_start")!;
+  const spliced = await before({ systemPrompt: STOCK_CORE }, {});
+  assert.equal(spliced?.systemPrompt, "VOICE\n- read: Read");
+  const endUi = stubUi({ model });
+  await h.handlers.get("turn_end")!({ message: REPLY }, endUi.ctx);
+  const dir = path.join(h.artifactsDir, "output-tests");
+  const [file] = fs.readdirSync(dir);
+  const sha = createHash("sha256").update(templateBytes, "utf8").digest("hex");
+  const body = fs.readFileSync(path.join(dir, file!), "utf8");
+  assert.ok(body.includes("\n- template: voice.md\n"), body);
+  assert.ok(body.includes(`\n- template-sha256: ${sha}\n`), body);
+  // A model without ctx.model falls to unknown/unknown in file and header.
+  await h.command("test", stubUi({}).ctx);
+  await before({ systemPrompt: STOCK_CORE }, {});
+  await h.handlers.get("turn_end")!({ message: REPLY }, stubUi({}).ctx);
+  const names = fs.readdirSync(dir).sort();
+  assert.equal(names.length, 2);
+  assert.ok(
+    names.some((n) => /-unknown-unknown\.md$/.test(n)),
+    names.join(),
+  );
+});
+
+test("wiring: result write failure notifies error and clears pending state", async () => {
+  const blocker = path.join(tempDir("blocker"), "artifacts");
+  fs.writeFileSync(blocker, "not a directory");
+  const h = harness({ artifactsDir: blocker, fixturePath: fixtureFile() });
+  await h.command("test", stubUi({}).ctx);
+  assert.equal(h.sent.length, 1);
+  const endUi = stubUi({});
+  const turnEnd = h.handlers.get("turn_end")!;
+  await assert.doesNotReject(turnEnd({ message: REPLY }, endUi.ctx));
+  assert.equal(endUi.notices.length, 1);
+  assert.equal(endUi.notices[0]!.type, "error");
+  // Pending state cleared: the next turn_end is silent and writes nothing.
+  const again = stubUi({});
+  await turnEnd({ message: REPLY }, again.ctx);
+  assert.deepEqual(again.notices, []);
+  assert.equal(fs.readFileSync(blocker, "utf8"), "not a directory");
+});
+
+test("wiring: test with missing fixture notifies error and sends nothing", async () => {
+  const h = harness({ fixturePath: path.join(tempDir("nofix"), "missing.md") });
+  const ui = stubUi({ model: { provider: "p", id: "m" } });
+  await h.command("test", ui.ctx);
+  assert.deepEqual(h.sent, []);
+  assert.equal(ui.notices.length, 1);
+  assert.equal(ui.notices[0]!.type, "error");
+  assert.match(ui.notices[0]!.message, /^fixture unreadable: /);
+  // No pending capture was recorded: turn_end writes nothing.
+  const endUi = stubUi({});
+  await h.handlers.get("turn_end")!({ message: REPLY }, endUi.ctx);
+  assert.deepEqual(endUi.notices, []);
+  assert.equal(fs.existsSync(path.join(h.artifactsDir, "output-tests")), false);
 });
