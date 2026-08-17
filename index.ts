@@ -3,15 +3,18 @@
  *
  * Rebuilds the core of Pi's system prompt (identity, tool list, guidelines,
  * Pi documentation) from the active template in templates/. The template
- * owns the prose; the harness owns the live data, spliced in through three
+ * owns the prose; the harness owns the live data, spliced in through four
  * optional placeholders:
  *
  *   {{AVAILABLE_TOOLS}}  the "- tool: snippet" lines for the active tool set
  *   {{GUIDELINES}}       the per-tool guideline bullets for the active tool set
  *   {{PI_DOCS}}          the Pi documentation section (paths + routing rules)
+ *   {{PI_SCRATCHPAD}}    one bullet naming the session scratch directory, read
+ *                        from process.env.PI_SCRATCHPAD (published by the
+ *                        pi-scratchpad extension); empty when unset
  *
- * Everything after the core (project_context/AGENTS.md, skills, cwd,
- * scratchpad) is left untouched, so context files and skills keep layering
+ * Everything after the core (project_context/AGENTS.md, skills, cwd) is
+ * left untouched, so context files and skills keep layering
  * normally and the claude-go bridge forwards the rewritten prompt as-is.
  *
  * Fail-open posture: if a SYSTEM.md/--system-prompt custom prompt is active,
@@ -108,7 +111,11 @@ export default function systemPromptExtension(
     if (active === null) return; // no template resolves: stock prompt stands
 
     const [core, tail] = splitTail(prompt);
-    const rendered = renderTemplate(active.content, core);
+    const rendered = renderTemplate(
+      active.content,
+      core,
+      process.env.PI_SCRATCHPAD,
+    );
     if (rendered === null) return; // shape drifted: fail open
     lastRender = {
       name: active.name,

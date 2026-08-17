@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import test from "node:test";
 import systemPromptExtension from "../index.ts";
-import { renderTemplate } from "../lib/splice.ts";
+import { renderTemplate, scratchpadSection } from "../lib/splice.ts";
 
 const TOOLS = "- read: Read file contents\n- bash: Execute bash commands";
 const GUIDELINES =
@@ -56,6 +56,10 @@ test("stock prompt is rebuilt from the template with the tail preserved", async 
       .replaceAll("{{AVAILABLE_TOOLS}}", TOOLS)
       .replaceAll("{{GUIDELINES}}", GUIDELINES)
       .replaceAll("{{PI_DOCS}}", DOCS)
+      .replaceAll(
+        "{{PI_SCRATCHPAD}}",
+        scratchpadSection(process.env.PI_SCRATCHPAD),
+      )
       .trimEnd() + TAIL;
   assert.equal(result.systemPrompt, expected);
   // The tail split also honours the skills-only and cwd-only shapes.
@@ -100,6 +104,36 @@ test("renderTemplate replaces all three placeholders", () => {
   );
   // Placeholders are optional: an absent placeholder no-ops.
   assert.equal(renderTemplate("Only prose.", STOCK_CORE), "Only prose.");
+});
+
+test("renderTemplate fills {{PI_SCRATCHPAD}} from the given path, empty when unset", () => {
+  const template = "Intro.\n\n## Scratchpad\n\n{{PI_SCRATCHPAD}}\n";
+  const withPath = renderTemplate(template, STOCK_CORE, "/tmp/pad/abc");
+  assert.ok(
+    withPath?.includes("- `/tmp/pad/abc` (also `$PI_SCRATCHPAD` in bash)"),
+  );
+  assert.ok(withPath?.includes("deleted after a period of disuse."));
+  assert.equal(renderTemplate(template, STOCK_CORE), "Intro.\n\n## Scratchpad");
+  assert.equal(
+    renderTemplate(template, STOCK_CORE, ""),
+    "Intro.\n\n## Scratchpad",
+  );
+});
+
+test("the handler passes process.env.PI_SCRATCHPAD into the render", async () => {
+  const prior = process.env.PI_SCRATCHPAD;
+  process.env.PI_SCRATCHPAD = "/tmp/pad/live";
+  try {
+    const result = await capturedHandler()({ systemPrompt: STOCK_CORE + TAIL });
+    assert.ok(
+      result?.systemPrompt.includes(
+        "- `/tmp/pad/live` (also `$PI_SCRATCHPAD` in bash)",
+      ),
+    );
+  } finally {
+    if (prior === undefined) delete process.env.PI_SCRATCHPAD;
+    else process.env.PI_SCRATCHPAD = prior;
+  }
 });
 
 test("renderTemplate returns null on drifted shape", () => {

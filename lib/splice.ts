@@ -32,12 +32,34 @@ export function extract(
 }
 
 /**
+ * The `{{PI_SCRATCHPAD}}` body: one bullet naming the session's scratch
+ * directory. The pi-scratchpad extension publishes the path in
+ * `process.env.PI_SCRATCHPAD` at session_start; the template owns any heading.
+ */
+export function scratchpadSection(path: string | undefined): string {
+  if (!path) return "";
+  return (
+    `- \`${path}\` (also \`$PI_SCRATCHPAD\` in bash) is a private scratch directory for this session. ` +
+    "Write bulky intermediate output there instead of into the conversation: full gate and test logs, " +
+    "raw command output, generated data, analysis scripts, then read back the summary. " +
+    "Cite the path when you tell the user where the detail lives. It is deleted after a period of disuse."
+  );
+}
+
+/**
  * Render the template with the stock core's live data spliced in. Returns
  * null when any anchor is missing (the stock shape drifted), so the caller
  * can leave the prompt as Pi built it. Placeholders are optional: an absent
  * placeholder means the template omits that section, and replaceAll no-ops.
+ * `scratchpad` is the session scratch directory, or undefined when the
+ * pi-scratchpad extension is not running; then `{{PI_SCRATCHPAD}}` renders
+ * empty.
  */
-export function renderTemplate(template: string, core: string): string | null {
+export function renderTemplate(
+  template: string,
+  core: string,
+  scratchpad?: string,
+): string | null {
   const tools = extract(
     core,
     "Available tools:\n",
@@ -52,5 +74,6 @@ export function renderTemplate(template: string, core: string): string | null {
     .replaceAll("{{AVAILABLE_TOOLS}}", tools)
     .replaceAll("{{GUIDELINES}}", guidelines)
     .replaceAll("{{PI_DOCS}}", docs)
+    .replaceAll("{{PI_SCRATCHPAD}}", scratchpadSection(scratchpad))
     .trimEnd();
 }
