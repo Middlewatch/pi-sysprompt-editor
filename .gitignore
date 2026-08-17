@@ -1,0 +1,28 @@
+# Build output
+dist/
+/build/
+
+# Caches and dependencies
+node_modules/
+__pycache__/
+*.pyc
+
+# Scratch and throwaway
+scratch/
+*.tmp
+*.log
+HANDOFF.md
+
+# Secrets
+.env
+*.key
+*.pem
+*.secret
+
+# Editor droppings
+*~
+*.swp
+.DS_Store
+
+# Harness alias for AGENTS.md; the symlink is machine-local, not history
+CLAUDE.md
