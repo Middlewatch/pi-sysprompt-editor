@@ -360,6 +360,26 @@ test("wiring: armed capture writes provider md and raw txt with payload bytes", 
   ]);
   assert.equal(warn.notices[0]!.type, "warning");
   assert.equal(takeArmedCapture(), null);
+  // A turn that ends with the capture still armed (a provider that never
+  // emitted before_provider_request) disarms and warns; nothing is written.
+  const turnEnd = h.handlers.get("turn_end");
+  assert.ok(turnEnd, "turn_end registered");
+  armCapture("2026-01-02-030405");
+  const stale = stubUi({});
+  await turnEnd({ message: { role: "assistant", content: [] } }, stale.ctx);
+  assert.equal(takeArmedCapture(), null, "stale arm cleared at turn end");
+  assert.deepEqual(stale.notices, [
+    {
+      message:
+        "inspect 2026-01-02-030405: provider did not expose its payload; capture cancelled",
+      type: "warning",
+    },
+  ]);
+  assert.equal(fs.readdirSync(inspectDir).length, 3);
+  // With nothing armed, turn_end is silent.
+  const quiet = stubUi({});
+  await turnEnd({ message: { role: "assistant", content: [] } }, quiet.ctx);
+  assert.deepEqual(quiet.notices, []);
 });
 
 test("wiring: artifact write failure notifies error and clears capture state", async () => {

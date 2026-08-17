@@ -166,3 +166,16 @@ CONTRACT AMENDMENT, or K/R resolution, newest last.
   `<stamp>-provider.txt`; `sha256sum <stamp>-provider.txt` matches the
   notified prefix; the provider dump contains injections absent from the
   immediate dump.
+
+## 2026-08-17 — Owner ruling on F7 and CONTRACT AMENDMENT
+
+- Owner ruled: both remedies. (1) claude-go Pi adapter commit 2cedcb9 calls
+  `options.onPayload({ system, messages, model, tools }, model)` before the
+  bridge open, observation only; claude-go verify.sh green, pi_smoke red on
+  removal / green with it. (2) CONTRACT AMENDMENT (owner ruled 2026-08-17):
+  Interfaces gain "a `turn_end` that finds the capture still armed disarms
+  it and notifies a warning naming the stamp"; folded into wiring test 19
+  so the pinned count stays 37. F7 closed; Phase 2 verdict PASS after fix
+  waves. Owner also ruled: continue to P3.1 with the Phase 2 eye check
+  running in parallel.
+- verify.sh: exit 0, 37 pass, 0 fail (`verify-125342.log`).

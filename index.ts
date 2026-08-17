@@ -190,6 +190,20 @@ export default function systemPromptExtension(
     );
   });
 
+  pi.on("turn_end", async (_event: any, ctx: any) => {
+    // Fail-safe for providers that never emit before_provider_request: a
+    // capture still armed when the turn ends can never fire for the message
+    // that was meant to trigger it, so disarm rather than let it attach to
+    // a later, unrelated turn.
+    const stale = takeArmedCapture();
+    if (stale !== null) {
+      ctx.ui.notify(
+        `inspect ${stale}: provider did not expose its payload; capture cancelled`,
+        "warning",
+      );
+    }
+  });
+
   async function actionInspect(ctx: ExtensionCommandContext): Promise<void> {
     if (artifactsDir === null) {
       ctx.ui.notify("artifacts directory could not be resolved", "error");

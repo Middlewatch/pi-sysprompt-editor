@@ -129,3 +129,22 @@ The Phase 2 implementation is substantially rebuildable from DESIGN.md, the plan
 ## Phase 2 verdict
 
 FAIL — F7 remains an open MAJOR.
+
+## Re-review after Phase 2 fix waves 03ccc8f and the F7 ruling
+
+- F7: CLOSED by owner ruling 2026-08-17 (both remedies). claude-go adapter
+  commit 2cedcb9 (`~/projects/claude-go/main`) calls `options.onPayload`
+  once per turn with `{ system, messages, model, tools }`, so
+  `before_provider_request` now fires on bridge turns and the `system`
+  string matches the Anthropic-string recognizer; pi_smoke asserts the call
+  (red when removed). In this repo, a `turn_end` handler disarms a still-
+  armed capture and warns "provider did not expose its payload; capture
+  cancelled" (proven at the end of wiring test 19). Executor closure; the
+  fresh-context reviewer's F7 evidence stands as written.
+- F8: OPEN as K3 candidates (no code change by design).
+- F9: CLOSED in 03ccc8f (render-throw, md-then-txt failure, stale arm).
+- F10, F11: NOTE, no action.
+
+## Phase 2 verdict (after fix waves)
+
+PASS — no CRITICAL or MAJOR open.
