@@ -940,3 +940,19 @@ input` return undefined on cancel; `pi.sendUserMessage` always triggers a
   P2.2) proposing the twin plus a one-clause DESIGN.md amendment.
 - Round 13: PASS — `plans/2026-08-17-template-manager.lint-13.md`.
   Lint converged.
+
+## Amendments
+
+- 2026-08-17 (ratified by owner at close-out) — A, from Phase 2 review F7:
+  a `turn_end` that finds the inspect capture still armed disarms it and
+  notifies a warning naming the stamp ("provider did not expose its
+  payload; capture cancelled"). Paired with claude-go 2cedcb9, whose Pi
+  adapter now calls `options.onPayload` so `before_provider_request` fires
+  on bridge turns.
+- 2026-08-17 (ratified by owner at close-out) — B, from Phase 3 review F12:
+  `turn_end` consumes the pending output test only when
+  `event.message.stopReason !== "toolUse"`, so the result records the
+  loop's final reply; the `test` action refuses (error notify, nothing
+  sent, nothing pending) when `ctx.isIdle()` is false or a test is already
+  pending. The competing-human-message race remains K2's day-one
+  acceptance.

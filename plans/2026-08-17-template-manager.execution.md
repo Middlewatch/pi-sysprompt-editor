@@ -252,3 +252,8 @@ CONTRACT AMENDMENT, or K/R resolution, newest last.
   P2.1, 0e34d1a P2.2, 03ccc8f P2 fix wave, e0e78b9 Phase 2 gate, bd15078
   P2 fix wave (F7), 305ab6b P3.1, 2fb558c P3 fix wave, plus this close-out
   commit. Outside this repo: claude-go 2cedcb9.
+
+## 2026-08-17 — Owner ratified amendments A and B
+
+- Both CONTRACT AMENDMENTS ratified at close-out; folded into the plan's
+  `## Amendments` section. Owner called the as-built pass.
