@@ -36,7 +36,7 @@ byte copy of the active template`.
   stock shape, unrecognized payload shape) leaves the prompt or artifact in
   the documented fallback state. Verified by named unit tests, one per
   branch.
-- `scripts/verify.sh` exits 0 with 37 unit tests passing, 0 failing.
+- `scripts/verify.sh` exits 0 with 38 unit tests passing, 0 failing.
 
 ## Fixed decisions
 
@@ -97,7 +97,7 @@ Green is: node 22.x asserted, `npm ci` clean, `prettier --check` clean,
 `tsc --noEmit` clean, `node --experimental-strip-types --test
 tests/*.test.ts` all pass, 0 fail. Test count by packet: baseline 4
 (existing `tests/rewrite.test.ts`), P1.1 → 6, P1.2 → 12, P1.3 → 15,
-P1.4 → 19, P2.1 → 21, P2.2 → 30, P3.1 → 37. Live checks that need a real
+P1.4 → 19, P2.1 → 22, P2.2 → 31, P3.1 → 38. Live checks that need a real
 session are phase gate eye checks, named in each phase gate, and are not
 part of verify.sh.
 
@@ -121,8 +121,11 @@ part of verify.sh.
   argument; `index.ts` supplies the real path (resolved from
   `import.meta.url`, same pattern as today), tests supply temp dirs. The
   pinned spellings from `index.ts` at repo root are
-  `new URL("./templates/", import.meta.url)` and
-  `new URL("../artifacts/", import.meta.url)`.
+  `fileURLToPath(new URL("./templates/", import.meta.url))` and
+  `fileURLToPath(new URL("../artifacts/", import.meta.url))`
+  (`node:url`), so every path handed to `lib/` is a decoded string. There
+  is no other fallback: if URL resolution throws, the splice fails open
+  and command actions notify the error.
 - `lib/inspect.ts` — immediate dump rendering, payload system-prompt
   extraction, arm/disarm state, artifact writing.
 - `lib/output-test.ts` — pinned test prompt assembly, result filename,
@@ -218,11 +221,12 @@ part of verify.sh.
 ### Types and signatures
 
 ```typescript
-// index.ts
+// index.ts — all fields are plain decoded path strings; defaults are
+// computed with fileURLToPath(new URL(<spelling>, import.meta.url))
 interface ExtensionPaths {
-  templatesDir?: string;   // default: new URL("./templates/", import.meta.url)
-  artifactsDir?: string;   // default: new URL("../artifacts/", import.meta.url)
-  fixturePath?: string;    // default: new URL("./fixtures/output-test-document.md", import.meta.url)
+  templatesDir?: string;   // default spelling: "./templates/"
+  artifactsDir?: string;   // default spelling: "../artifacts/"
+  fixturePath?: string;    // default spelling: "./fixtures/output-test-document.md"
 }
 export default function systemPromptExtension(pi: ExtensionAPI, paths?: ExtensionPaths): void;
 
@@ -357,7 +361,7 @@ P1.1 (1–4), plus 2 new in P1.1 (5–6):
 `tests/wiring.test.ts` — command and hook glue through the real `index.ts`
 default export against a stub ExtensionAPI, always constructed through
 the `paths` seam with temp directories; 3 in P1.3 (16, 17, 32), 1 in P1.4
-(33), 1 in P2.1 (18), 2 in P2.2 (19, 34), 3 in P3.1 (20, 36, 37):
+(33), 2 in P2.1 (18, 38), 2 in P2.2 (19, 34), 3 in P3.1 (20, 36, 37):
 
 16. `wiring: switch action writes the pointer through the registered command`
 17. `wiring: cancelled picker writes nothing`
@@ -373,6 +377,9 @@ the `paths` seam with temp directories; 3 in P1.3 (16, 17, 32), 1 in P1.4
 37. `wiring: result write failure notifies error and clears pending state`
     (unwritable artifacts dir; the turn_end handler notifies at level
     "error", clears the pending capture, and does not throw)
+38. `wiring: immediate dump write failure notifies error and does not arm`
+    (unwritable artifacts dir; the inspect action notifies at level
+    "error", arms nothing, and does not throw)
 
 `tests/inspect.test.ts` — 1 in P2.1 (21), 7 in P2.2 (22–27, 31):
 
@@ -397,10 +404,10 @@ the `paths` seam with temp directories; 3 in P1.3 (16, 17, 32), 1 in P1.4
     name and sha256)
 35. `result: assistant text blocks joined, non-text blocks ignored`
 
-Count reconciliation: 4 existing + 33 new = 37 at completion. Per packet:
+Count reconciliation: 4 existing + 34 new = 38 at completion. Per packet:
 P1.1 adds 5–6 (→ 6), P1.2 adds 7–12 (→ 12), P1.3 adds 16, 17, 32 (→ 15),
-P1.4 adds 13–15 and 33 (→ 19), P2.1 adds 18 and 21 (→ 21), P2.2 adds 19,
-22–27, 31, 34 (→ 30), P3.1 adds 20, 28–30, 35–37 (→ 37). These are the
+P1.4 adds 13–15 and 33 (→ 19), P2.1 adds 18, 21, 38 (→ 22), P2.2 adds 19,
+22–27, 31, 34 (→ 31), P3.1 adds 20, 28–30, 35–37 (→ 38). These are the
 totals the Verification contract pins.
 
 ### Least confident decisions
@@ -438,8 +445,9 @@ Changes: `git mv SYSTEM.template.md templates/default.md`. Add
 lib/templates.ts per the pinned signatures: pointer file is
 `<dir>/.active`, validity rule as pinned in Interfaces,
 fallback chain pointer → default.md → null. index.ts resolves
-the real templates dir from `import.meta.url` with the
-absolute repo path as catch-fallback (today's pattern) and the
+the real templates dir per the pinned Layout spelling
+(`fileURLToPath`, no other fallback; the old TEMPLATE_FALLBACK
+constant is deleted) and the
 splice path uses `readActiveTemplate`; null means the stock
 prompt stands. `.gitignore` gains `templates/.active`.
 Acceptance: verify.sh green; 12 pass, 0 fail (adds tests 7–12); test 10
@@ -504,7 +512,7 @@ The `inspect` action (replacing the K5 placeholder) writes
 `../artifacts/inspect/<stamp>-immediate.md` and notifies the
 path. Golden fixture created from a synthetic
 SystemPromptOptions value pinned in the test.
-Acceptance: verify.sh green; 21 pass, 0 fail (adds tests 18 and 21).
+Acceptance: verify.sh green; 22 pass, 0 fail (adds tests 18, 21, and 38).
 Falsification witness: dropping the skills section from the
 renderer turns the golden compare (21) red.
 
@@ -518,7 +526,7 @@ inspect action arms after the immediate dump and notifies
 (checkpoint D4). `before_provider_request` handler per the
 pinned call stack: extraction rules, `.md` + `.txt` pair,
 JSON fallback, sha256-prefixed notify, no payload replacement.
-Acceptance: verify.sh green; 30 pass, 0 fail (adds tests 19, 22–27, 31,
+Acceptance: verify.sh green; 31 pass, 0 fail (adds tests 19, 22–27, 31,
 and 34); test 19 asserts the `.txt` bytes equal the synthetic payload's
 system string exactly, test 31 byte-compares the `.md` serialization
 against its golden, and test 34 stubs a throwing write and asserts the
@@ -527,7 +535,7 @@ takeArmedCapture return the stamp twice turns test 27 red.
 
 ### Phase 2 gate
 
-Runnable: verify.sh green, 30 unit tests pass, 0 fail.
+Runnable: verify.sh green, 31 unit tests pass, 0 fail.
 Eye check: in a live session with at least one other prompt-touching
 extension loaded, `/sysprompt inspect` then one message writes all three
 files; `sha256sum <stamp>-provider.txt` matches the notified hash prefix
@@ -551,7 +559,7 @@ Changes: lib/output-test.ts per the pinned signatures and formats
 `test` action (replacing the K5 placeholder) per the pinned
 call stack; attribution via `lastRender` per Interfaces; modelId and
 provider sanitized per Interfaces.
-Acceptance: verify.sh green; 37 pass, 0 fail (adds tests 20, 28–30, and
+Acceptance: verify.sh green; 38 pass, 0 fail (adds tests 20, 28–30, and
 35–37); test 20 drives a stub turn where before_agent_start failed open
 and asserts the header records `(stock)` with no sha line; test 36 is the
 positive twin asserting the rendered template's name and sha256; test 37
@@ -561,7 +569,7 @@ test 28 red.
 
 ### Phase 3 gate
 
-Runnable: verify.sh green, 37 unit tests pass, 0 fail.
+Runnable: verify.sh green, 38 unit tests pass, 0 fail.
 Eye check: one live `/sysprompt test` run produces a results file whose
 header names the active template, its sha256, and the current model, and
 whose body is the model's summary; owner eyeballs it as the first corpus
@@ -679,3 +687,8 @@ input` return undefined on cancel; `pi.sendUserMessage` always triggers a
   export's optional `paths` parameter (ExtensionPaths in Types, temp dirs
   in tests, URL defaults for Pi); test 10's unit/handler split stated
   explicitly; result-write failure gained test 37 (37 final).
+- Round 5: FAIL with materials —
+  `plans/2026-08-17-template-manager.lint-5.md`. Fixed: path
+  representation pinned to decoded strings via `fileURLToPath` in Layout
+  and Types, catch-fallback removed from P1.2 (delete TEMPLATE_FALLBACK);
+  immediate-dump write failure gained test 38 in P2.1 (38 final).
