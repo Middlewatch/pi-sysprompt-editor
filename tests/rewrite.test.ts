@@ -45,7 +45,7 @@ function capturedHandler(): (
 
 test("stock prompt is rebuilt from the template with the tail preserved", async () => {
   const template = fs.readFileSync(
-    new URL("../SYSTEM.template.md", import.meta.url),
+    new URL("../templates/default.md", import.meta.url),
     "utf8",
   );
   const result = await capturedHandler()({ systemPrompt: STOCK_CORE + TAIL });

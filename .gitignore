@@ -26,3 +26,6 @@ HANDOFF.md
 
 # Harness alias for AGENTS.md; the symlink is machine-local, not history
 CLAUDE.md
+
+# Active template pointer is machine-local
+templates/.active

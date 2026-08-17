@@ -22,3 +22,21 @@ CONTRACT AMENDMENT, or K/R resolution, newest last.
 - verify.sh: exit 0, 6 pass, 0 fail.
 - Falsification witness: red on removing the `{{PI_DOCS}}` replaceAll
   (tests 1 and 5 fail), green on revert.
+
+## 2026-08-17 — P1.2 Template store, pointer resolution, migration
+
+- `git mv SYSTEM.template.md templates/default.md`; `.gitignore` gains
+  `templates/.active`. README/DESIGN/AGENTS still name the old path; that
+  is prose outside this packet's Files list, left for the as-built pass.
+- `lib/templates.ts`: `listTemplates` (resolved active first, then alpha),
+  `readActiveTemplate` (valid pointer → default.md → null), `setActiveTemplate`.
+  Pointer validity `^[a-z0-9-]+\.md$` after trim.
+- index.ts: `ExtensionPaths` seam added, templates dir resolved with
+  `fileURLToPath(new URL("./templates/", import.meta.url))`,
+  TEMPLATE_FALLBACK deleted; URL resolution failure fails open.
+- Tests 7–12 in `tests/templates.test.ts`; test 10 drives the handler
+  through the seam and asserts undefined. Test 1 repointed at
+  `templates/default.md`.
+- verify.sh: exit 0, 12 pass, 0 fail.
+- Falsification witness: red on making the pointer read rethrow (tests 1, 4,
+  7, 10, 11, 12 fail), green on revert.
