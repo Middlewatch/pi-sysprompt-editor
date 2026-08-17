@@ -72,7 +72,8 @@ the rewrite and each fail-open branch.
 The template manager expansion adds: a single command opening an action menu with
 switch (pick the active template from `templates/`), new (seed a fresh
 template as a copy of the active one), inspect (immediate dump
-plus armed ground-truth capture, both written as markdown files), and test
+plus armed ground-truth capture, both written as markdown files, with a
+raw text twin of the captured prompt for byte comparison), and test
 (send the standardized analysis prompt with the fixture document, save the
 response to a dated results file). Template authoring itself stays in
 ordinary file edits.

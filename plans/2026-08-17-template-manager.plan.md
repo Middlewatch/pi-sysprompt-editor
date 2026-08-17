@@ -1,6 +1,6 @@
 # Template manager build
 
-**Status:** draft
+**Status:** ratified 2026-08-17
 
 ## Goal
 
@@ -69,9 +69,17 @@ templates/default.md`; a permanent legacy fallback path rejected.
 - 2026-08-17 — Toolchain: node 22.x enforced by verify.sh (v22.23.1
   verified on the home machine), typescript 7.0.2, prettier 3.9.6,
   `@earendil-works/pi-coding-agent` 0.84.1.
-- These decisions are closed during implementation. O1, O2, and O3 under
-  Ratification items are the open owner items; O1 blocks P3.1, O2 blocks
-  P1.1, O3 blocks P2.2. Ratification folds their rulings into this list.
+- 2026-08-17 — Owner (O1): the output-test result header records the
+  sha256 of the active template's content (`template-sha256:` line,
+  `node:crypto`, no new dependency); name-only attribution rejected.
+- 2026-08-17 — Owner (O2): placeholders are optional in a template; an
+  absent placeholder no-ops. Requiring every placeholder rejected.
+- 2026-08-17 — Owner (O3): the armed capture writes a raw `.txt` twin
+  beside the provider `.md`; DESIGN.md Expected behaviors amended with the
+  byte-comparison clause at ratification. Markdown-only rejected.
+- These decisions are closed during implementation. O1–O3 were ruled at
+  ratification; the Ratification items section below is the record of
+  what was put to the owner.
 
 ## Non-goals
 
@@ -816,10 +824,10 @@ Commit; build complete, hand to as-built pass.
 
 ## Handoff notes
 
-- Entry point: P1.1 (after O2 is ruled; O3 before P2.2; O1 before P3.1).
-  Base commit:
+- Entry point: P1.1; O1–O3 are ruled, nothing blocks. Base commit:
   `51a27ef47f90cb5399644e9f8d6c22b11b25197a` (contains DESIGN.md as
-  ratified, the fixture, and this plan's draft).
+  ratified, the fixture, and this plan's draft); the ratified plan and
+  the O3 DESIGN.md amendment land in the ratification commit on top.
 - Home machine: willow. Repo: `~/projects/pi-sysprompt-editor/main`,
   container artifacts at `~/projects/pi-sysprompt-editor/artifacts/`.
 - The extension is deployed as a symlink from Pi's extension directory, so
