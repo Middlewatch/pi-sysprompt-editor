@@ -930,3 +930,5 @@ input` return undefined on cancel; `pi.sendUserMessage` always triggers a
   `.txt` twin had no Fixed-decisions row and DESIGN.md's Expected
   behaviors did not mention it; opened ratification item O3 (blocks
   P2.2) proposing the twin plus a one-clause DESIGN.md amendment.
+- Round 13: PASS — `plans/2026-08-17-template-manager.lint-13.md`.
+  Lint converged.
