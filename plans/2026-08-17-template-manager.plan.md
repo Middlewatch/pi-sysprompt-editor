@@ -36,7 +36,7 @@ byte copy of the active template`.
   stock shape, unrecognized payload shape) leaves the prompt or artifact in
   the documented fallback state. Verified by named unit tests, one per
   branch.
-- `scripts/verify.sh` exits 0 with 36 unit tests passing, 0 failing.
+- `scripts/verify.sh` exits 0 with 37 unit tests passing, 0 failing.
 
 ## Fixed decisions
 
@@ -97,7 +97,7 @@ Green is: node 22.x asserted, `npm ci` clean, `prettier --check` clean,
 `tsc --noEmit` clean, `node --experimental-strip-types --test
 tests/*.test.ts` all pass, 0 fail. Test count by packet: baseline 4
 (existing `tests/rewrite.test.ts`), P1.1 → 6, P1.2 → 12, P1.3 → 15,
-P1.4 → 19, P2.1 → 21, P2.2 → 30, P3.1 → 36. Live checks that need a real
+P1.4 → 19, P2.1 → 21, P2.2 → 30, P3.1 → 37. Live checks that need a real
 session are phase gate eye checks, named in each phase gate, and are not
 part of verify.sh.
 
@@ -107,10 +107,13 @@ part of verify.sh.
 
 - `index.ts` — registration only: `before_agent_start` splice hook,
   `before_provider_request` capture hook, `turn_end` test-capture hook,
-  `/sysprompt` command. Logic lives in `lib/`. Exports its registration
-  function (already the default export) so wiring tests can construct it
-  against a stub ExtensionAPI, the pattern `tests/rewrite.test.ts` already
-  uses.
+  `/sysprompt` command. Logic lives in `lib/`. The default export gains an
+  optional second parameter,
+  `systemPromptExtension(pi, paths?: ExtensionPaths)`, the test seam: Pi
+  calls it with one argument and the URL-resolved defaults apply; wiring
+  tests pass temp directories. This is the only injection mechanism.
+  `tests/rewrite.test.ts` already uses the stub-ExtensionAPI half of this
+  pattern.
 - `lib/splice.ts` — `splitTail`, `extract`, `renderTemplate`: moved verbatim
   from today's `index.ts` so the splice keeps its tested shape.
 - `lib/templates.ts` — template store: list, active pointer read/write,
@@ -215,6 +218,14 @@ part of verify.sh.
 ### Types and signatures
 
 ```typescript
+// index.ts
+interface ExtensionPaths {
+  templatesDir?: string;   // default: new URL("./templates/", import.meta.url)
+  artifactsDir?: string;   // default: new URL("../artifacts/", import.meta.url)
+  fixturePath?: string;    // default: new URL("./fixtures/output-test-document.md", import.meta.url)
+}
+export default function systemPromptExtension(pi: ExtensionAPI, paths?: ExtensionPaths): void;
+
 // lib/splice.ts
 export function splitTail(prompt: string): [core: string, tail: string];
 export function extract(
@@ -344,8 +355,9 @@ P1.1 (1–4), plus 2 new in P1.1 (5–6):
 15. `scaffold: existing file not overwritten`
 
 `tests/wiring.test.ts` — command and hook glue through the real `index.ts`
-default export against a stub ExtensionAPI; 3 in P1.3 (16, 17, 32), 1 in
-P1.4 (33), 1 in P2.1 (18), 2 in P2.2 (19, 34), 2 in P3.1 (20, 36):
+default export against a stub ExtensionAPI, always constructed through
+the `paths` seam with temp directories; 3 in P1.3 (16, 17, 32), 1 in P1.4
+(33), 1 in P2.1 (18), 2 in P2.2 (19, 34), 3 in P3.1 (20, 36, 37):
 
 16. `wiring: switch action writes the pointer through the registered command`
 17. `wiring: cancelled picker writes nothing`
@@ -358,6 +370,9 @@ P1.4 (33), 1 in P2.1 (18), 2 in P2.2 (19, 34), 2 in P3.1 (20, 36):
 36. `wiring: result header records the rendered template name and sha256`
     (drives a successful stub splice turn, then turn_end, and asserts the
     header carries the rendered template's name and content sha256)
+37. `wiring: result write failure notifies error and clears pending state`
+    (unwritable artifacts dir; the turn_end handler notifies at level
+    "error", clears the pending capture, and does not throw)
 
 `tests/inspect.test.ts` — 1 in P2.1 (21), 7 in P2.2 (22–27, 31):
 
@@ -382,10 +397,10 @@ P1.4 (33), 1 in P2.1 (18), 2 in P2.2 (19, 34), 2 in P3.1 (20, 36):
     name and sha256)
 35. `result: assistant text blocks joined, non-text blocks ignored`
 
-Count reconciliation: 4 existing + 32 new = 36 at completion. Per packet:
+Count reconciliation: 4 existing + 33 new = 37 at completion. Per packet:
 P1.1 adds 5–6 (→ 6), P1.2 adds 7–12 (→ 12), P1.3 adds 16, 17, 32 (→ 15),
 P1.4 adds 13–15 and 33 (→ 19), P2.1 adds 18 and 21 (→ 21), P2.2 adds 19,
-22–27, 31, 34 (→ 30), P3.1 adds 20, 28–30, 35, 36 (→ 36). These are the
+22–27, 31, 34 (→ 30), P3.1 adds 20, 28–30, 35–37 (→ 37). These are the
 totals the Verification contract pins.
 
 ### Least confident decisions
@@ -428,8 +443,10 @@ absolute repo path as catch-fallback (today's pattern) and the
 splice path uses `readActiveTemplate`; null means the stock
 prompt stands. `.gitignore` gains `templates/.active`.
 Acceptance: verify.sh green; 12 pass, 0 fail (adds tests 7–12); test 10
-runs against an empty temp dir and asserts the handler returns
-undefined (stock stands). Falsification witness: making
+asserts `readActiveTemplate` returns null against an empty temp dir, and
+in the same test drives the captured before_agent_start handler (built
+through the `paths` seam on that dir) to assert it returns undefined
+(stock stands). Falsification witness: making
 readActiveTemplate throw on a missing pointer file turns test
 7 red.
 
@@ -456,7 +473,7 @@ Changes: `scaffoldTemplate` per the pinned signature and validation.
 Wire the `new` action per the pinned call stack: `ctx.ui.input`, then
 readActiveTemplate (null: notify "no active template to copy"), then
 scaffold, notify created path or the error message.
-Acceptance: verify.sh green; 17 pass, 0 fail (adds tests 13–15).
+Acceptance: verify.sh green; 19 pass, 0 fail (adds tests 13–15 and 33).
 Falsification witness: removing the existing-file check turns
 test 15 red.
 
@@ -534,16 +551,17 @@ Changes: lib/output-test.ts per the pinned signatures and formats
 `test` action (replacing the K5 placeholder) per the pinned
 call stack; attribution via `lastRender` per Interfaces; modelId and
 provider sanitized per Interfaces.
-Acceptance: verify.sh green; 36 pass, 0 fail (adds tests 20, 28–30, 35,
-and 36); test 20 drives a stub turn where before_agent_start failed open
+Acceptance: verify.sh green; 37 pass, 0 fail (adds tests 20, 28–30, and
+35–37); test 20 drives a stub turn where before_agent_start failed open
 and asserts the header records `(stock)` with no sha line; test 36 is the
-positive twin asserting the rendered template's name and sha256.
-Falsification witness: changing OUTPUT_TEST_PROMPT wording turns test 28
-red.
+positive twin asserting the rendered template's name and sha256; test 37
+proves result-write failure notifies, clears pending state, and does not
+throw. Falsification witness: changing OUTPUT_TEST_PROMPT wording turns
+test 28 red.
 
 ### Phase 3 gate
 
-Runnable: verify.sh green, 36 unit tests pass, 0 fail.
+Runnable: verify.sh green, 37 unit tests pass, 0 fail.
 Eye check: one live `/sysprompt test` run produces a results file whose
 header names the active template, its sha256, and the current model, and
 whose body is the model's summary; owner eyeballs it as the first corpus
@@ -655,3 +673,9 @@ input` return undefined on cancel; `pi.sendUserMessage` always triggers a
   spellings pinned (`./templates/`, `../artifacts/` from index.ts) and K1
   aligned; scaffold signature takes content with the command owning the
   readActiveTemplate check.
+- Round 4: FAIL with materials —
+  `plans/2026-08-17-template-manager.lint-4.md`. Fixed: P1.4 acceptance
+  synced to 19 with test 33; the wiring test seam pinned as the default
+  export's optional `paths` parameter (ExtensionPaths in Types, temp dirs
+  in tests, URL defaults for Pi); test 10's unit/handler split stated
+  explicitly; result-write failure gained test 37 (37 final).
