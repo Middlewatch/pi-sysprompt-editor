@@ -70,3 +70,23 @@ CONTRACT AMENDMENT, or K/R resolution, newest last.
 - verify.sh: exit 0, 21 pass, 0 fail.
 - Falsification witness: red on dropping the existing-file check (`wx` → `w`;
   tests 15 and 21 fail), green on revert.
+
+## 2026-08-17 — Phase 1 gate
+
+- Runnable: verify.sh exit 0, 21 pass, 0 fail (log in scratchpad,
+  `verify-123654.log`).
+- Review: fresh-context Sol reviewer opened
+  `plans/2026-08-17-template-manager.review-1.md` (0 CRITICAL, 2 MAJOR,
+  2 MINOR, 2 NOTE). Fix wave fe683bf closed F1–F4 (list only pointer-valid
+  regular files; proof gaps in tests 1, 40, 43 closed; raw name input;
+  atomic pointer rename). Re-review: PASS, F5 (live symlink eye check) left
+  open as the owner-queued NOTE. K5 confirmed inert (F6).
+- K1 simulation: loading `~/.pi/agent/extensions/pi-sysprompt-editor/index.ts`
+  through the symlink path with a stub API listed `["default.md"]`, so
+  `./templates/` resolves through the deployed link
+  (`$PI_SCRATCHPAD/k1-load.mts`). K1 stays open until the owner's live
+  eye check.
+- OWNER EYE CHECK QUEUED (Phase 1): in a fresh Pi session, `/sysprompt`
+  opens the menu; `switch` to a second template changes the next reply's
+  voice; `new` creates a template that then appears in the switch list;
+  `git status` shows `templates/.active` ignored. Resolves K1 and F5.

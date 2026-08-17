@@ -59,3 +59,17 @@ Not fully freezable from the stated set. Most behavior is pinned by DESIGN.md, t
 ## Verdict
 
 FAIL — MAJOR findings remain open.
+
+## Re-review after fix wave fe683bf
+
+- F1: CLOSED — `listTemplates` now filters for both regular files and pointer-valid names (`lib/templates.ts:20-30`), with invalid-name and directory exclusions tested (`tests/templates.test.ts:113-129`).
+- F2: CLOSED — Wiring proves `new` copies a non-default active template (`tests/wiring.test.ts:213-227`), rewrite tests cover skills-only and cwd-only tails (`tests/rewrite.test.ts:61-69`), and `inspect`/`test` are notify-only with template/artifact directories unchanged (`tests/wiring.test.ts:180-191`).
+- F3: CLOSED — `actionNew` passes raw input without trimming (`index.ts:108-115`), and padded input is rejected without creating `padded.md` (`tests/wiring.test.ts:228-232`).
+- F4: CLOSED — Pointer publication writes a same-directory PID/timestamp temporary file and renames it over `.active`, cleaning up on rename failure (`lib/templates.ts:74-97`).
+- F5: OPEN — Owner-queued NOTE remains unchanged: the live deployed-symlink eye check is still required (`plans/2026-08-17-template-manager.review-1.md:39-45`).
+- F6: CLOSED — Conformance evidence remains intact; fail-open branches still return without rewriting for custom/non-stock prompts, unresolved paths, absent templates, and drifted shapes (`index.ts:67-79`; `tests/rewrite.test.ts:72-90`; `tests/templates.test.ts:88-97`). No new defect is evident in the current targeted files.
+- Inspection limitation: the provided tools exposed current files and a clean worktree, but not `git diff HEAD~1 HEAD` or `git log`; commit-boundary attribution could not be independently checked.
+
+## Verdict
+
+PASS — no CRITICAL or MAJOR finding remains open; F5 is an owner-queued NOTE.
