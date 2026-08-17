@@ -1,6 +1,6 @@
 # Template manager build
 
-**Status:** ratified 2026-08-17
+**Status:** executing
 
 ## Goal
 

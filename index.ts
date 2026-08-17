@@ -19,6 +19,7 @@
  */
 import * as fs from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { renderTemplate, splitTail } from "./lib/splice.ts";
 
 const TEMPLATE_FALLBACK =
   "/home/willow/projects/pi-sysprompt-editor/main/SYSTEM.template.md";
@@ -32,29 +33,6 @@ function templatePath(): string {
   } catch {
     return TEMPLATE_FALLBACK;
   }
-}
-
-/** Split the assembled prompt into [core, tail] at the first appended layer. */
-function splitTail(prompt: string): [string, string] {
-  for (const marker of [
-    "\n\n<project_context>",
-    "\n<available_skills>",
-    "\nCurrent working directory:",
-  ]) {
-    const i = prompt.indexOf(marker);
-    if (i !== -1) return [prompt.slice(0, i), prompt.slice(i)];
-  }
-  return [prompt, ""];
-}
-
-/** Return the text between two anchors in the core, or null if absent. */
-function extract(core: string, start: string, end: string): string | null {
-  const a = core.indexOf(start);
-  if (a === -1) return null;
-  const from = a + start.length;
-  const b = core.indexOf(end, from);
-  if (b === -1) return null;
-  return core.slice(from, b);
 }
 
 export default function systemPromptExtension(pi: ExtensionAPI): void {
@@ -71,21 +49,8 @@ export default function systemPromptExtension(pi: ExtensionAPI): void {
     }
 
     const [core, tail] = splitTail(prompt);
-    const tools = extract(
-      core,
-      "Available tools:\n",
-      "\n\nIn addition to the tools above",
-    );
-    const guidelines = extract(core, "Guidelines:\n", "\n\nPi documentation");
-    const docsAt = core.indexOf("Pi documentation (");
-    if (tools === null || guidelines === null || docsAt === -1) return; // shape drifted: fail open
-    const docs = core.slice(docsAt).trimEnd();
-
-    const rendered = template
-      .replaceAll("{{AVAILABLE_TOOLS}}", tools)
-      .replaceAll("{{GUIDELINES}}", guidelines)
-      .replaceAll("{{PI_DOCS}}", docs)
-      .trimEnd();
+    const rendered = renderTemplate(template, core);
+    if (rendered === null) return; // shape drifted: fail open
     return { systemPrompt: rendered + tail };
   });
 }

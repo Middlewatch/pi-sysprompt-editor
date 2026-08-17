@@ -1,12 +1,15 @@
 /**
  * Unit tests for the template splice. A stub ExtensionAPI captures the
  * before_agent_start handler; a synthetic stock prompt exercises the rewrite
- * and each fail-open branch. No Pi process and no provider request.
+ * and each fail-open branch through the index.ts composition, and two tests
+ * drive lib/splice.ts renderTemplate directly. No Pi process and no provider
+ * request.
  */
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import test from "node:test";
 import systemPromptExtension from "../index.ts";
+import { renderTemplate } from "../lib/splice.ts";
 
 const TOOLS = "- read: Read file contents\n- bash: Execute bash commands";
 const GUIDELINES =
@@ -75,4 +78,35 @@ test("a drifted core shape fails open", async () => {
   const drifted = STOCK_CORE.replace("Guidelines:", "House rules:");
   const result = await capturedHandler()({ systemPrompt: drifted + TAIL });
   assert.equal(result, undefined);
+});
+
+test("renderTemplate replaces all three placeholders", () => {
+  const template =
+    "Intro.\n\nTools:\n{{AVAILABLE_TOOLS}}\n\nRules:\n{{GUIDELINES}}\n\n{{PI_DOCS}}\n\n";
+  const rendered = renderTemplate(template, STOCK_CORE);
+  assert.equal(
+    rendered,
+    `Intro.\n\nTools:\n${TOOLS}\n\nRules:\n${GUIDELINES}\n\n${DOCS}`,
+  );
+  // Placeholders are optional: an absent placeholder no-ops.
+  assert.equal(renderTemplate("Only prose.", STOCK_CORE), "Only prose.");
+});
+
+test("renderTemplate returns null on drifted shape", () => {
+  const template = "{{AVAILABLE_TOOLS}}\n{{GUIDELINES}}\n{{PI_DOCS}}";
+  assert.equal(
+    renderTemplate(template, STOCK_CORE.replace("Guidelines:", "Rules:")),
+    null,
+  );
+  assert.equal(
+    renderTemplate(template, STOCK_CORE.replace("Available tools:", "Tools:")),
+    null,
+  );
+  assert.equal(
+    renderTemplate(
+      template,
+      STOCK_CORE.replace("Pi documentation (", "Pi docs ("),
+    ),
+    null,
+  );
 });
