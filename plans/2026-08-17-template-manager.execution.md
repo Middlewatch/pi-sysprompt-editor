@@ -134,3 +134,35 @@ CONTRACT AMENDMENT, or K/R resolution, newest last.
 - Falsification witnesses: red on returning txt for a null extraction
   (tests 26, 41, and 19 fail); red on dropping the `.txt` write (test 19
   fails); green on revert of each.
+
+## 2026-08-17 — Phase 2 gate
+
+- Runnable: verify.sh exit 0, 37 pass, 0 fail (`verify-124821.log`).
+- Review: Phase 2 register appended to
+  `plans/2026-08-17-template-manager.review-1.md` (0 CRITICAL, 1 MAJOR,
+  2 MINOR, 2 NOTE). Fix wave 03ccc8f closed F9 (render-throw, md-then-txt
+  write failure, stale-arm clearing all proven). F10 confirms all three
+  goldens byte-conform. F11 confirms handler containment.
+- F7 MAJOR OPEN, needs owner ruling: the claude-go bridge provider is a
+  custom `registerProvider` whose `streamSimple` never calls
+  `options.onPayload` (`~/projects/claude-go/main/adapters/pi/extension.ts`,
+  no `onPayload` reference), so Pi never emits `before_provider_request`
+  on bridge turns. Behavior here is fail-open (arm stays set, nothing
+  written, nothing thrown) but the "send any message" promise does not
+  hold on the owner's primary provider, and a later native-provider turn
+  would consume the stale arm. Options put to owner: (a) claude-go adapter
+  calls `options.onPayload` with `{ system, messages }` before open (fix
+  outside this repo); (b) CONTRACT AMENDMENT here: `turn_end` with a still-
+  armed capture disarms and notifies "provider did not expose the payload";
+  (c) both.
+- F8 (K3 candidates, MINOR, no code change): pi-ai's Responses adapter
+  sends messages under `input` (leading system/developer item), Gemini
+  sends `config.systemInstruction`; both fall to the JSON dump with no
+  `.txt`. Recorded as K3 CONTRACT AMENDMENT candidates if seen in real use.
+- OWNER EYE CHECK QUEUED (Phase 2): in a live session on a native provider
+  (Anthropic or OpenAI-compatible; not claude-go until F7 is resolved) with
+  another prompt-touching extension loaded, `/sysprompt inspect` then one
+  message writes `<stamp>-immediate.md`, `<stamp>-provider.md`,
+  `<stamp>-provider.txt`; `sha256sum <stamp>-provider.txt` matches the
+  notified prefix; the provider dump contains injections absent from the
+  immediate dump.
