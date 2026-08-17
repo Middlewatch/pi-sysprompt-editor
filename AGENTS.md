@@ -1,8 +1,8 @@
 # pi-sysprompt-editor
 
 Pi extension that rebuilds the core system prompt from the owner-authored
-`SYSTEM.template.md`. `DESIGN.md` is the design basis (draft until the
-design-basis session ratifies it).
+`SYSTEM.template.md`. `DESIGN.md` is the ratified design basis; the dated
+decision records live in `docs/`.
 
 ## Workflow charters
 
