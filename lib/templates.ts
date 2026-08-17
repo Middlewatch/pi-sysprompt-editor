@@ -70,3 +70,29 @@ export function readActiveTemplate(
 export function setActiveTemplate(dir: string, name: string): void {
   fs.writeFileSync(path.join(dir, POINTER_FILE), name + "\n", "utf8");
 }
+
+const VALID_NAME = /^[a-z0-9-]+$/;
+
+/**
+ * Create `<dir>/<name>.md` holding `content` (the active template's bytes,
+ * supplied by the caller). Returns the created path, or an Error when the
+ * name is invalid or the file already exists; never overwrites.
+ */
+export function scaffoldTemplate(
+  dir: string,
+  name: string,
+  content: string,
+): string | Error {
+  if (!VALID_NAME.test(name)) {
+    return new Error(`invalid template name "${name}" (use [a-z0-9-]+)`);
+  }
+  const target = path.join(dir, `${name}.md`);
+  try {
+    fs.writeFileSync(target, content, { encoding: "utf8", flag: "wx" });
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "EEXIST") return new Error(`${name}.md already exists`);
+    return err instanceof Error ? err : new Error(String(err));
+  }
+  return target;
+}

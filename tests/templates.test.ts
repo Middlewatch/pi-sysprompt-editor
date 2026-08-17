@@ -12,6 +12,7 @@ import systemPromptExtension from "../index.ts";
 import {
   listTemplates,
   readActiveTemplate,
+  scaffoldTemplate,
   setActiveTemplate,
 } from "../lib/templates.ts";
 
@@ -124,4 +125,49 @@ test("list: active template sorts first", () => {
   setActiveTemplate(dir, "gone.md");
   assert.deepEqual(listTemplates(dir), ["default.md", "alpha.md", "zeta.md"]);
   assert.deepEqual(listTemplates(path.join(dir, "missing")), []);
+});
+
+test("scaffold: new template is a byte copy of the active template", () => {
+  const dir = tempDir();
+  const bytes = "ACTIVE\r\n\u00e9 {{AVAILABLE_TOOLS}}\n\n\n";
+  seed(dir, { "default.md": "DEFAULT", "voice.md": bytes });
+  setActiveTemplate(dir, "voice.md");
+  const active = readActiveTemplate(dir);
+  assert.ok(active);
+  const created = scaffoldTemplate(dir, "copy-1", active.content);
+  assert.equal(created, path.join(dir, "copy-1.md"));
+  assert.deepEqual(
+    fs.readFileSync(created as string),
+    fs.readFileSync(path.join(dir, "voice.md")),
+  );
+  assert.deepEqual(listTemplates(dir), ["voice.md", "copy-1.md", "default.md"]);
+});
+
+test("scaffold: invalid name rejected", () => {
+  const dir = tempDir();
+  for (const bad of [
+    "",
+    "Caps",
+    "has space",
+    "dot.md",
+    "../up",
+    "a_b",
+    "x/y",
+  ]) {
+    const result = scaffoldTemplate(dir, bad, "content");
+    assert.ok(result instanceof Error, `name ${JSON.stringify(bad)}`);
+  }
+  assert.deepEqual(fs.readdirSync(dir), []);
+});
+
+test("scaffold: existing file not overwritten", () => {
+  const dir = tempDir();
+  seed(dir, { "default.md": "ORIGINAL" });
+  const result = scaffoldTemplate(dir, "default", "REPLACEMENT");
+  assert.ok(result instanceof Error);
+  assert.match(result.message, /already exists/);
+  assert.equal(
+    fs.readFileSync(path.join(dir, "default.md"), "utf8"),
+    "ORIGINAL",
+  );
 });

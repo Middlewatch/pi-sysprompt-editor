@@ -57,3 +57,16 @@ CONTRACT AMENDMENT, or K/R resolution, newest last.
 - verify.sh: exit 0, 16 pass, 0 fail.
 - Falsification witness: red on writing the pointer before the select
   resolves (test 17 fails), green on revert.
+
+## 2026-08-17 — P1.4 Scaffold action
+
+- `scaffoldTemplate(dir, name, content)`: name must match `^[a-z0-9-]+$`;
+  writes `<name>.md` with the `wx` flag so an existing file is never
+  overwritten (EEXIST → Error "already exists"). Returns the created path.
+- `new` action wired: `ctx.ui.input("Template name:")` → cancel returns
+  silently → `readActiveTemplate` null notifies "no active template to
+  copy" → scaffold → notify created path or the error message.
+- Tests 13–15 (`tests/templates.test.ts`), 33 and 43 (`tests/wiring.test.ts`).
+- verify.sh: exit 0, 21 pass, 0 fail.
+- Falsification witness: red on dropping the existing-file check (`wx` → `w`;
+  tests 15 and 21 fail), green on revert.

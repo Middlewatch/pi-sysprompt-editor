@@ -28,6 +28,7 @@ import { renderTemplate, splitTail } from "./lib/splice.ts";
 import {
   listTemplates,
   readActiveTemplate,
+  scaffoldTemplate,
   setActiveTemplate,
 } from "./lib/templates.ts";
 
@@ -99,6 +100,26 @@ export default function systemPromptExtension(
     ctx.ui.notify(`active template: ${chosen} (applies next message)`);
   }
 
+  async function actionNew(ctx: ExtensionCommandContext): Promise<void> {
+    if (templatesDir === null) {
+      ctx.ui.notify("templates directory could not be resolved", "error");
+      return;
+    }
+    const name = await ctx.ui.input("Template name:");
+    if (name === undefined) return; // cancelled: no write
+    const active = readActiveTemplate(templatesDir);
+    if (active === null) {
+      ctx.ui.notify("no active template to copy", "warning");
+      return;
+    }
+    const created = scaffoldTemplate(templatesDir, name.trim(), active.content);
+    if (created instanceof Error) {
+      ctx.ui.notify(created.message, "error");
+      return;
+    }
+    ctx.ui.notify(`created ${created} (copy of ${active.name})`);
+  }
+
   async function runAction(
     action: Action,
     ctx: ExtensionCommandContext,
@@ -107,6 +128,7 @@ export default function systemPromptExtension(
       case "switch":
         return actionSwitch(ctx);
       case "new":
+        return actionNew(ctx);
       case "inspect":
       case "test":
         ctx.ui.notify(`${action}: not built yet`, "warning");

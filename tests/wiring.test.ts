@@ -178,3 +178,42 @@ test("wiring: unknown argument notifies usage and does nothing", async () => {
   assert.equal(fs.existsSync(path.join(h.templatesDir, ".active")), false);
   assert.deepEqual(fs.readdirSync(h.artifactsDir), []);
 });
+
+test("wiring: new with no active template notifies and creates nothing", async () => {
+  const h = harness();
+  const ui = stubUi({ input: () => "fresh" });
+  await h.command("new", ui.ctx);
+  assert.deepEqual(ui.inputs, ["Template name:"]);
+  assert.deepEqual(ui.notices, [
+    { message: "no active template to copy", type: "warning" },
+  ]);
+  assert.deepEqual(fs.readdirSync(h.templatesDir), []);
+});
+
+test("wiring: cancelled name input creates nothing", async () => {
+  const h = harness();
+  seed(h.templatesDir, { "default.md": "D" });
+  const ui = stubUi({ input: () => undefined });
+  await h.command("new", ui.ctx);
+  assert.deepEqual(ui.inputs, ["Template name:"]);
+  assert.deepEqual(ui.notices, []);
+  assert.deepEqual(fs.readdirSync(h.templatesDir), ["default.md"]);
+  // The happy path through the same wiring creates the copy and notifies.
+  const ok = stubUi({ input: () => "fresh" });
+  await h.command("new", ok.ctx);
+  assert.equal(
+    fs.readFileSync(path.join(h.templatesDir, "fresh.md"), "utf8"),
+    "D",
+  );
+  assert.equal(ok.notices.length, 1);
+  assert.match(
+    ok.notices[0]!.message,
+    /created .*fresh\.md \(copy of default\.md\)/,
+  );
+  // A second attempt with the same name is refused at the wiring level.
+  const dup = stubUi({ input: () => "fresh" });
+  await h.command("new", dup.ctx);
+  assert.deepEqual(dup.notices, [
+    { message: "fresh.md already exists", type: "error" },
+  ]);
+});
