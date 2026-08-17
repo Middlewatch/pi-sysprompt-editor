@@ -223,3 +223,32 @@ CONTRACT AMENDMENT, or K/R resolution, newest last.
   (written); test 36 moves the pointer between command and render (proves
   render-time attribution), runs render → each stand-down → `(stock)`,
   proves the busy refusal and the pending refusal.
+
+## 2026-08-17 — Phase 3 gate and close-out
+
+- Runnable: verify.sh exit 0, 45 pass, 0 fail (`verify-130231.log`).
+- Review: Phase 3 register PASS after fix wave 2fb558c (F12, F13, F14
+  closed). Registers for all three phases are closed in
+  `plans/2026-08-17-template-manager.review-1.md`.
+- K1: simulated pass (symlink-path load lists default.md); live eye check
+  still owner-queued. K2: attribution now holds across tool turns and
+  refuses when busy; the competing-human-message race stays the day-one
+  acceptance; live eye check owner-queued. K3: OPEN by design; F8 records
+  Responses `input` and Gemini `config.systemInstruction` as candidates.
+  K4: accepted. K5 RESOLVED (P3.1).
+- OWNER EYE CHECK QUEUED (Phase 3): one live `/sysprompt test` run
+  produces `artifacts/output-tests/<stamp>-<provider>-<model>.md` whose
+  header names the active template, its sha256, and the current model,
+  and whose body is the model's summary; owner eyeballs it as the first
+  corpus entry.
+- Ratification of executor-applied CONTRACT AMENDMENTS put to owner at
+  close-out: (A) turn_end disarms a stale inspect capture with a warning
+  (F7); (B) turn_end holds the pending output test across toolUse messages
+  and the test action refuses when busy or already pending (F12).
+- Status set `executing` → `done`. Full verification contract:
+  `./scripts/verify.sh` green at 45/45.
+- Commit series since base 57e038e: b08dde6 P1.1, f61b207 P1.2, 60eba37
+  P1.3, e1f9654 P1.4, fe683bf P1 fix wave, ee76dc5 Phase 1 gate, 9668cbd
+  P2.1, 0e34d1a P2.2, 03ccc8f P2 fix wave, e0e78b9 Phase 2 gate, bd15078
+  P2 fix wave (F7), 305ab6b P3.1, 2fb558c P3 fix wave, plus this close-out
+  commit. Outside this repo: claude-go 2cedcb9.

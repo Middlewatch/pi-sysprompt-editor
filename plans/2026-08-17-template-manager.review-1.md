@@ -197,3 +197,10 @@ The serializers, fixture, prompt constant, collision helper contract, result nam
 ## Phase 3 verdict
 
 FAIL — F12 remains an open MAJOR.
+
+## Re-review after Phase 3 fix wave 2fb558c
+- F12: CLOSED — `turn_end` holds pending state on `toolUse` and consumes only a terminal message; `actionTest` rejects busy or duplicate runs before arming/sending (`index.ts:231-272`, `index.ts:275-307`). Error/aborted terminal messages are therefore captured with their available text rather than leaving stale state; this is acceptable and does not introduce a new unsafe hold. The accepted competing-human-message K2 race remains (`plans/2026-08-17-template-manager.plan.md:775-779`).
+- F13: CLOSED — test 20 proves tool-use hold then final write (`tests/wiring.test.ts:449-493`); test 36 proves render-time pointer attribution, successful-render-to-three-stand-down resets with `(stock)` and no sha, plus busy and duplicate refusals (`tests/wiring.test.ts:496-555`).
+- F14: CLOSED — every `before_agent_start` resets attribution before all stand-down/fail-open returns, and only successful splice sets it, so no fail-open branch was weakened (`index.ts:100-117`); pending state still clears before formatting/writing (`index.ts:236-270`). Inspection-only review could not execute the suite.
+## Phase 3 verdict (after fix wave)
+PASS — no CRITICAL or MAJOR finding remains open.

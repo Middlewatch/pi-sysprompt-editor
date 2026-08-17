@@ -1,6 +1,6 @@
 # Template manager build
 
-**Status:** executing
+**Status:** done
 
 ## Goal
 
