@@ -190,7 +190,12 @@ part of verify.sh.
   `<base>-N` for the smallest integer N ≥ 2 such that no `<base>-N<ext>`
   exists for any ext in the list; the provider pair passes
   `[".md", ".txt"]` so both files always share one suffix, single files
-  pass one extension.
+  pass one extension. `freeBase` returns the basename only (no directory,
+  no extension); the caller joins and appends. Each artifact family
+  resolves its own collision at write time from the same raw stamp: the
+  immediate file resolves `<stamp>-immediate`, the provider pair resolves
+  `<stamp>-provider`, the result resolves `resultBase(...)`. Armed and
+  pending state store the raw stamp, never a resolved base.
 - Filename sanitization: in provider and modelId, every character outside
   `[A-Za-z0-9._-]` becomes `-`.
 - Pointer validity: the pointer file's content, trimmed, must match
@@ -376,18 +381,19 @@ export function armCapture(stamp: string): void;
 export function takeArmedCapture(): string | null; // stamp once, then null
 export function makeStamp(now: Date): string; // local YYYY-MM-DD-HHmmss, zero-padded
 export function freeBase(dir: string, base: string, exts: string[]): string;
-// join(dir, base) or join(dir, `${base}-${N}`), smallest N >= 2, such that
-// no candidate + ext exists for any ext; see the collision rule
+// returns base, or `${base}-${N}` for the smallest N >= 2, such that no
+// join(dir, candidate + ext) exists for any ext; basename only, caller
+// joins dir and appends the extension
 
 // lib/output-test.ts
 export const OUTPUT_TEST_PROMPT = "Summarize this article for me.";
 export function buildTestMessage(fixtureText: string): string;
 // OUTPUT_TEST_PROMPT + "\n\n---\n\n" + fixtureText
-export function resultFileName(
+export function resultBase(
   stamp: string,
   provider: string,
   modelId: string,
-): string;
+): string; // `${stamp}-${sanitize(provider)}-${sanitize(modelId)}`, no extension
 export function formatResult(
   header: ResultHeader,
   responseText: string,
@@ -428,19 +434,26 @@ New: command handler → `ctx.ui.input` → undefined: return →
 `readActiveTemplate` → null: notify "no active template to copy", return
 → `scaffoldTemplate(dir, name, content)` → notify path or error message.
 
-Inspect: command handler → `ctx.getSystemPromptOptions()` →
-`renderImmediateDump` → write immediate file → `armCapture(stamp)` →
-notify. Then `before_provider_request` handler → `takeArmedCapture()` →
-null: return → `renderProviderDump(header, event.payload)` → write `.md`
-(+ `.txt` when extraction succeeded) → notify with sha256 prefix. The
+Inspect: command handler → `stamp = makeStamp(new Date())` →
+`ctx.getSystemPromptOptions()` → `renderImmediateDump` →
+`freeBase(inspectDir, stamp + "-immediate", [".md"])` (inspectDir =
+`<artifactsDir>/inspect/`) → write immediate
+file → `armCapture(stamp)` → notify. Then `before_provider_request`
+handler → `takeArmedCapture()` → null: return →
+`renderProviderDump(header, event.payload)` →
+`freeBase(inspectDir, stamp + "-provider", [".md", ".txt"])` → write
+`.md` (+ `.txt` when extraction succeeded) → notify with sha256 prefix. The
 handler never returns a payload replacement.
 
-Test: command handler → read fixture (missing: notify, stop) → record
-pending {stamp, provider, modelId} →
+Test: command handler → read fixture (missing: notify, stop) →
+`stamp = makeStamp(new Date())` → record pending {stamp, provider,
+modelId} →
 `pi.sendUserMessage(buildTestMessage(...))` → (that turn's
 `before_agent_start` sets `lastRender` as on every turn) → `turn_end`
 handler → pending set: header from pending + `lastRender` (null →
 `"(stock)"`, no sha line) → `formatResult(header, assistantText(event.message))`
+→ `freeBase(outputTestsDir, resultBase(stamp, provider, modelId), [".md"])`
+(outputTestsDir = `<artifactsDir>/output-tests/`)
 → write result file → clear pending → notify path.
 
 ### Test plan
@@ -543,7 +556,8 @@ Every header written through the wiring uses `modelLabel`, so the
 `tests/output-test.test.ts` — 4 in P3.1 (28–30, 35):
 
 28. `prompt: fixture embedded verbatim after pinned instructions`
-29. `result: filename carries stamp, sanitized provider and model id`
+29. `result: resultBase carries stamp, sanitized provider and model id`
+    (no extension; `anthropic/claude` style ids sanitize to `-`)
 30. `result: golden byte-compare` (input
     `fixtures/golden/output-test-result.input.json`, expected
     `fixtures/golden/output-test-result.md`, covering header with template
@@ -891,3 +905,10 @@ input` return undefined on cancel; `pi.sendUserMessage` always triggers a
   pair-shares-one-suffix rule; tests 43 (cancelled name input, P1.4), 44
   (stamp and collision suffix, P2.1), 45 (empty-options golden, P2.1)
   added; totals rederived to 21/28/37/45 (45 final).
+- Round 11: FAIL with one Medium —
+  `plans/2026-08-17-template-manager.lint-11.md`. Fixed: `freeBase`
+  pinned to return a basename (Types and test 44 now agree),
+  `resultFileName` renamed `resultBase` (no extension), and the Inspect
+  and Test call stacks now name `makeStamp` and every `freeBase` call
+  site, with armed/pending state holding the raw stamp and each artifact
+  family resolving its own collision at write time.
