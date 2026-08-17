@@ -297,6 +297,10 @@ export function formatResult(
   header: ResultHeader,
   responseText: string,
 ): string;
+export function assistantText(message: unknown): string;
+// message.content items with type === "text" -> their .text joined with
+// "\n\n"; non-text items ignored; a message with no content array or
+// no text items yields "" (the result file is still written)
 
 interface DumpHeader {
   timestamp: string;
@@ -341,7 +345,7 @@ pending {stamp, provider, modelId} →
 `pi.sendUserMessage(buildTestMessage(...))` → (that turn's
 `before_agent_start` sets `lastRender` as on every turn) → `turn_end`
 handler → pending set: header from pending + `lastRender` (null →
-`"(stock)"`, no sha line) → `formatResult(header, <text blocks joined>)`
+`"(stock)"`, no sha line) → `formatResult(header, assistantText(event.message))`
 → write result file → clear pending → notify path.
 
 ### Test plan
@@ -426,6 +430,9 @@ Every header written through the wiring uses `modelLabel`, so the
     `fixtures/golden/output-test-result.md`, covering header with template
     name and sha256)
 35. `result: assistant text blocks joined, non-text blocks ignored`
+    (`assistantText` on a synthetic message with text, tool-call, and text
+    blocks yields the two texts joined with `"\n\n"`; a message with no
+    text blocks yields `""`)
 
 Count reconciliation: 4 existing + 35 new = 39 at completion. Per packet:
 P1.1 adds 5–6 (→ 6), P1.2 adds 7–12 (→ 12), P1.3 adds 16, 17, 32 (→ 15),
@@ -735,3 +742,8 @@ input` return undefined on cancel; `pi.sendUserMessage` always triggers a
   `plans/2026-08-17-template-manager.lint-7.md`. Fixed: the count
   reconciliation line still said 34 new = 38; corrected to 35 new = 39.
   Everything else verified clean.
+- Round 8: FAIL with one Medium —
+  `plans/2026-08-17-template-manager.lint-8.md`. Fixed: assistant-text
+  extraction had a rule and a test (35) but no pinned function; added
+  `assistantText(message)` to `lib/output-test.ts` in Types, the Test
+  call stack, and test 35's description.
