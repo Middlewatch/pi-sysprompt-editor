@@ -74,6 +74,7 @@ function stubUi(script: {
   input?: (title: string) => string | undefined;
   model?: { provider: string; id: string };
   systemPromptOptions?: unknown;
+  idle?: boolean;
 }): StubUi {
   const notices: StubUi["notices"] = [];
   const selects: StubUi["selects"] = [];
@@ -95,6 +96,9 @@ function stubUi(script: {
     },
     getSystemPromptOptions() {
       return script.systemPromptOptions ?? { cwd: "/tmp" };
+    },
+    isIdle() {
+      return script.idle ?? true;
     },
   };
   return { ctx, notices, selects, inputs };
@@ -462,7 +466,14 @@ test("wiring: turn_end with pending capture writes the result file", async () =>
   assert.equal(await before({ systemPrompt: STOCK_CORE }, ui.ctx), undefined);
   const turnEnd = h.handlers.get("turn_end")!;
   const endUi = stubUi({ model });
-  await turnEnd({ message: REPLY }, endUi.ctx);
+  // A tool-calling turn ends without ending the loop: the capture holds.
+  await turnEnd(
+    { message: { ...REPLY, stopReason: "toolUse" }, toolResults: [] },
+    endUi.ctx,
+  );
+  assert.equal(fs.existsSync(path.join(h.artifactsDir, "output-tests")), false);
+  assert.deepEqual(endUi.notices, []);
+  await turnEnd({ message: { ...REPLY, stopReason: "stop" } }, endUi.ctx);
   const dir = path.join(h.artifactsDir, "output-tests");
   const files = fs.readdirSync(dir);
   assert.equal(files.length, 1);
@@ -489,24 +500,65 @@ test("wiring: result header records the rendered template name and sha256", asyn
   seed(h.templatesDir, { "default.md": "D", "voice.md": templateBytes });
   fs.writeFileSync(path.join(h.templatesDir, ".active"), "voice.md\n");
   const model = { provider: "p", id: "m" };
-  await h.command("test", stubUi({ model }).ctx);
   const before = h.handlers.get("before_agent_start")!;
+  const turnEnd = h.handlers.get("turn_end")!;
+  const dir = path.join(h.artifactsDir, "output-tests");
+  const sha = createHash("sha256").update(templateBytes, "utf8").digest("hex");
+  // The header records what rendered on the test turn, not what was active
+  // at command time: the pointer moves to voice.md after the command.
+  fs.writeFileSync(path.join(h.templatesDir, ".active"), "default.md\n");
+  await h.command("test", stubUi({ model }).ctx);
+  fs.writeFileSync(path.join(h.templatesDir, ".active"), "voice.md\n");
   const spliced = await before({ systemPrompt: STOCK_CORE }, {});
   assert.equal(spliced?.systemPrompt, "VOICE\n- read: Read");
   const endUi = stubUi({ model });
-  await h.handlers.get("turn_end")!({ message: REPLY }, endUi.ctx);
-  const dir = path.join(h.artifactsDir, "output-tests");
+  await turnEnd({ message: REPLY }, endUi.ctx);
   const [file] = fs.readdirSync(dir);
-  const sha = createHash("sha256").update(templateBytes, "utf8").digest("hex");
   const body = fs.readFileSync(path.join(dir, file!), "utf8");
   assert.ok(body.includes("\n- template: voice.md\n"), body);
   assert.ok(body.includes(`\n- template-sha256: ${sha}\n`), body);
+  // A successful render followed by each stand-down branch on the test turn
+  // yields (stock): lastRender is reset every before_agent_start.
+  const standDowns = [
+    { systemPrompt: STOCK_CORE, systemPromptOptions: { customPrompt: "x" } },
+    { systemPrompt: "Not stock." },
+    { systemPrompt: STOCK_CORE.replace("Guidelines:", "Rules:") },
+  ];
+  for (const event of standDowns) {
+    const seen = new Set(fs.readdirSync(dir));
+    await before({ systemPrompt: STOCK_CORE }, {}); // a good render first
+    await h.command("test", stubUi({ model }).ctx);
+    assert.equal(await before(event, {}), undefined);
+    await turnEnd({ message: REPLY }, stubUi({ model }).ctx);
+    const fresh = fs.readdirSync(dir).filter((n) => !seen.has(n));
+    assert.equal(fresh.length, 1);
+    const stock = fs.readFileSync(path.join(dir, fresh[0]!), "utf8");
+    assert.ok(stock.includes("\n- template: (stock)\n"), stock);
+    assert.ok(!stock.includes("template-sha256"), stock);
+  }
+  // Busy agent: the test is refused, nothing sent, nothing pending.
+  const sentBefore = h.sent.length;
+  const busy = stubUi({ model, idle: false });
+  await h.command("test", busy.ctx);
+  assert.equal(h.sent.length, sentBefore);
+  assert.equal(busy.notices[0]?.type, "error");
+  await turnEnd({ message: REPLY }, stubUi({ model }).ctx);
+  assert.equal(fs.readdirSync(dir).length, 4);
+  // A second test while one is pending is refused.
+  await h.command("test", stubUi({ model }).ctx);
+  const dup = stubUi({ model });
+  await h.command("test", dup.ctx);
+  assert.equal(h.sent.length, sentBefore + 1);
+  assert.match(dup.notices[0]!.message, /still pending/);
+  await before({ systemPrompt: STOCK_CORE }, {});
+  await turnEnd({ message: REPLY }, stubUi({ model }).ctx);
+  assert.equal(fs.readdirSync(dir).length, 5);
   // A model without ctx.model falls to unknown/unknown in file and header.
   await h.command("test", stubUi({}).ctx);
   await before({ systemPrompt: STOCK_CORE }, {});
-  await h.handlers.get("turn_end")!({ message: REPLY }, stubUi({}).ctx);
+  await turnEnd({ message: REPLY }, stubUi({}).ctx);
   const names = fs.readdirSync(dir).sort();
-  assert.equal(names.length, 2);
+  assert.equal(names.length, 6);
   assert.ok(
     names.some((n) => /-unknown-unknown\.md$/.test(n)),
     names.join(),

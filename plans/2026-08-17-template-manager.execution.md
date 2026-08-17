@@ -202,3 +202,24 @@ CONTRACT AMENDMENT, or K/R resolution, newest last.
 - Falsification witness: red on changing OUTPUT_TEST_PROMPT wording (tests
   28 and 20 fail), green on revert.
 - K5 RESOLVED — all three placeholders replaced (P1.4, P2.1, P3.1).
+
+## 2026-08-17 — Phase 3 review and CONTRACT AMENDMENT (forced by harness semantics)
+
+- Phase 3 register appended (0 CRITICAL, 1 MAJOR, 1 MINOR, 1 NOTE). F14
+  confirms the golden, `lastRender` reset logic, and containment.
+- 2026-08-17 CONTRACT AMENDMENT (forced by machine state: Pi 0.84.1 fires
+  `turn_end` per assistant message, including tool-calling messages, and
+  `sendUserMessage` without `deliverAs` rejects while streaming, swallowed
+  by the ExtensionAPI wrapper): "turn_end consumes the pending capture" →
+  "turn_end consumes the pending capture only when
+  `event.message.stopReason !== "toolUse"`, so the file records the loop's
+  final reply"; and the `test` action gains two refusals before recording
+  pending state: `ctx.isIdle()` false → error "agent is busy; run the
+  output test when idle", and a still-pending test → error naming its
+  stamp. Evidence: review F12 with pi-coding-agent citations
+  (`types.d.ts:548-560`, `agent-session.js:830-840, 1099-1134, 1855-1862`).
+  The competing-human-message race remains the K2 day-one acceptance.
+- F13 fix: test 20 drives a toolUse turn_end (held) then a stop turn_end
+  (written); test 36 moves the pointer between command and render (proves
+  render-time attribution), runs render → each stand-down → `(stock)`,
+  proves the busy refusal and the pending refusal.

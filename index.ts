@@ -228,8 +228,11 @@ export default function systemPromptExtension(
       );
     }
 
-    // Output test: the pending capture attaches to this turn's reply.
+    // Output test: the pending capture attaches to the loop's final reply.
+    // A tool-calling assistant message ends its own turn but not the loop,
+    // so hold the capture until a message that stops for another reason.
     if (pendingTest === null) return;
+    if (event?.message?.stopReason === "toolUse") return;
     const pending = pendingTest;
     pendingTest = null;
     if (artifactsDir === null) {
@@ -272,6 +275,19 @@ export default function systemPromptExtension(
   async function actionTest(ctx: ExtensionCommandContext): Promise<void> {
     if (fixturePath === null) {
       ctx.ui.notify("fixture path could not be resolved", "error");
+      return;
+    }
+    // sendUserMessage without deliverAs is rejected while streaming, and the
+    // in-flight turn's end would then be misattributed; refuse instead.
+    if (typeof ctx.isIdle === "function" && !ctx.isIdle()) {
+      ctx.ui.notify("agent is busy; run the output test when idle", "error");
+      return;
+    }
+    if (pendingTest !== null) {
+      ctx.ui.notify(
+        `output test ${pendingTest.stamp} is still pending; wait for its reply`,
+        "error",
+      );
       return;
     }
     let fixture: string;

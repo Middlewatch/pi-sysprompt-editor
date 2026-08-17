@@ -148,3 +148,52 @@ FAIL — F7 remains an open MAJOR.
 ## Phase 2 verdict (after fix waves)
 
 PASS — no CRITICAL or MAJOR open.
+
+## Phase 3 review
+
+Reviewer: fresh-context Sol, 2026-08-17
+
+Summary: 0 CRITICAL, 1 MAJOR, 1 MINOR, 1 NOTE.
+
+## F12 — MAJOR — `pendingTest` captures the first assistant turn, not reliably the test response
+
+**Evidence:** The command records `pendingTest` before calling `pi.sendUserMessage` (`index.ts:287-291`), while `turn_end` unconditionally consumes it on the first event (`index.ts:231-250`). Pi defines `turn_end` as one assistant message plus tool results (`node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts:548-560`) and emits it separately from the later `agent_end` (`node_modules/@earendil-works/pi-coding-agent/dist/core/agent-session.js:439-464`).
+
+Consequently:
+- If the owner submits another message after the test send, the result always records whichever assistant message reaches `turn_end` first. Normally that is the test turn, potentially steered by the extra message; if scheduling makes the other reply finish first, that unrelated reply is recorded. This is the exact race accepted for day one under single-writer, owner-driven use (`plans/2026-08-17-template-manager.plan.md:775-779`).
+- If the model calls tools, the first tool-calling assistant message triggers `turn_end`; the file contains only that message’s text blocks, possibly an empty body, rather than the final post-tool summary. `agent_end` occurs only after the loop (`types.d.ts:539-543`). This deterministic intermediate-response capture is a defect, not merely the accepted human-message race.
+- Extension commands execute immediately even while streaming (`agent-session.js:783-805`). `sendUserMessage` supplies no `deliverAs` (`index.ts:289-290`), although Pi requires one while streaming and otherwise rejects (`agent-session.js:830-840`, `agent-session.js:1099-1134`). The ExtensionAPI wrapper catches that rejection (`agent-session.js:1855-1862`), so the command still reports “sent,” leaves `pendingTest` armed, and the current unrelated turn’s next `turn_end` is written as the test result. This is a defect outside the stated owner-flow acceptance.
+
+**Why it matters:** Tool-using models and commands issued during an active run can produce confidently labeled files containing an intermediate or unrelated response. That defeats the output corpus’s attribution purpose and meets the plan’s trigger for a K2 amendment (`plans/2026-08-17-template-manager.plan.md:775-779`).
+
+**Suggested fix:** Amend K2 to key capture to the sent test message and to define final-response handling across tool turns; alternatively reject testing while non-idle and capture only after the relevant agent loop completes. Add real event-sequence tests for steering/follow-up, tool calls, and command invocation during streaming.
+
+## F13 — MINOR — Wiring tests do not prove render-time attribution or Pi event sequencing
+
+**Evidence:** The stub `sendUserMessage` only appends a string and never models idle state, rejection, agent loops, or event ordering (`tests/wiring.test.ts:36-61`). The stock test runs one failed-open `before_agent_start` immediately before one synthetic `turn_end` (`tests/wiring.test.ts:445-483`); the active-template twin likewise keeps the same active pointer from command through render and end (`tests/wiring.test.ts:485-503`). An implementation that snapshots `readActiveTemplate` at command time instead of reading `lastRender` at `turn_end` would pass both named tests. Likewise, an implementation that failed to reset a previously successful `lastRender` on a later stand-down would pass because no P3 test performs successful render → fail-open render → result capture. No test emits multiple `turn_end` events for a tool-using agent loop.
+
+The write-failure test does substantiate notification, no rejection, and one-shot clearing (`tests/wiring.test.ts:516-532`), and the missing-fixture test substantively proves error notification, no send, no pending write, and no artifact directory (`tests/wiring.test.ts:534-547`).
+
+**Why it matters:** Tests 20 and 36 can remain green with the principal attribution contract broken, and none can expose F12’s runtime failures.
+
+**Suggested fix:** Add transition tests proving successful render followed by every stand-down/fail-open branch yields `(stock)`, mutate the active pointer between command and `before_agent_start`, and drive realistic multi-turn/tool event sequences. Provide a send stub that rejects when non-idle without `deliverAs`.
+
+## F14 — NOTE — Serialization, reset logic, and named failure containment conform
+
+**Evidence:** The golden input fixes the complete header and response (`fixtures/golden/output-test-result.input.json:1-10`); the expected file has the pinned heading, ordered fields, separator, verbatim body, blank lines, and final newline (`fixtures/golden/output-test-result.md:1-21`), matching `formatResult` (`lib/output-test.ts:37-55`) and the plan (`plans/2026-08-17-template-manager.plan.md:269-287`). The `(stock)` twin exactly asserts omission of the sha line and final newline (`tests/output-test.test.ts:47-64`).
+
+`lastRender` is reset before every branch (`index.ts:100-102`); custom prompt, non-stock prompt, unresolved template directory, missing active template, and failed splice all return after that reset (`index.ts:103-112`). Only successful splice sets it (`index.ts:113-117`), and the result reads it at `turn_end`, not command time (`index.ts:242-250`). Assistant extraction follows the pinned text-only join rule (`lib/output-test.ts:57-73`; `tests/output-test.test.ts:67-85`).
+
+Fixture-read failure is caught and sends nothing (`index.ts:277-285`). Pending state is cleared before formatting, path resolution, or writing (`index.ts:231-267`); formatting and artifact writes are caught/notified, so the tested failure paths do not throw. The execution log reports 45 passing tests (`plans/2026-08-17-template-manager.execution.md:183-203`), but I could not independently run `verify.sh` or a live Pi test with the inspection-only tools.
+
+**Why it matters:** Apart from the attribution lifecycle, the pinned bytes, stand-down state, extraction, and named containment behavior are internally consistent.
+
+**Suggested fix:** Preserve these behaviors while fixing F12 and strengthening F13.
+
+## Phase 3 freezability
+
+The serializers, fixture, prompt constant, collision helper contract, result naming, extraction rules, and ordinary success/failure wiring are rebuildable from DESIGN.md, the plan, golden pair, fixture, and suites (`DESIGN.md:41-43`, `DESIGN.md:61-63`, `DESIGN.md:96-112`; `plans/2026-08-17-template-manager.plan.md:396-425`). Phase 3 is not fully freezable operationally because the suites replace Pi with a non-behavioral send stub and do not pin tool-loop, competing-message, or non-idle semantics. The required live corpus eye check is specified at `plans/2026-08-17-template-manager.plan.md:755-764` but is not recorded in the P3.1 execution entry (`plans/2026-08-17-template-manager.execution.md:183-203`).
+
+## Phase 3 verdict
+
+FAIL — F12 remains an open MAJOR.
