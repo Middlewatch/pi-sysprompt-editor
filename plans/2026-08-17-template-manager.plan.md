@@ -36,7 +36,7 @@ byte copy of the active template`.
   stock shape, unrecognized payload shape) leaves the prompt or artifact in
   the documented fallback state. Verified by named unit tests, one per
   branch.
-- `scripts/verify.sh` exits 0 with 38 unit tests passing, 0 failing.
+- `scripts/verify.sh` exits 0 with 39 unit tests passing, 0 failing.
 
 ## Fixed decisions
 
@@ -69,8 +69,9 @@ templates/default.md`; a permanent legacy fallback path rejected.
 - 2026-08-17 — Toolchain: node 22.x enforced by verify.sh (v22.23.1
   verified on the home machine), typescript 7.0.2, prettier 3.9.6,
   `@earendil-works/pi-coding-agent` 0.84.1.
-- These decisions are closed during implementation. R1 and R2 below are
-  open owner items; R1 blocks P3.1, R2 blocks P1.1.
+- These decisions are closed during implementation. O1 and O2 under
+  Ratification items are the open owner items; O1 blocks P3.1, O2 blocks
+  P1.1. Ratification folds their rulings into this list.
 
 ## Non-goals
 
@@ -97,7 +98,7 @@ Green is: node 22.x asserted, `npm ci` clean, `prettier --check` clean,
 `tsc --noEmit` clean, `node --experimental-strip-types --test
 tests/*.test.ts` all pass, 0 fail. Test count by packet: baseline 4
 (existing `tests/rewrite.test.ts`), P1.1 → 6, P1.2 → 12, P1.3 → 15,
-P1.4 → 19, P2.1 → 22, P2.2 → 31, P3.1 → 38. Live checks that need a real
+P1.4 → 19, P2.1 → 23, P2.2 → 32, P3.1 → 39. Live checks that need a real
 session are phase gate eye checks, named in each phase gate, and are not
 part of verify.sh.
 
@@ -139,7 +140,15 @@ part of verify.sh.
 - `fixtures/golden/immediate-dump.md`, `fixtures/golden/provider-dump.md`,
   `fixtures/golden/output-test-result.md` — golden serializations of the
   three artifact formats, byte-compared by unit tests, part of the
-  freezable asset set.
+  freezable asset set. Each golden is a pair: `<name>.input.json` holds
+  the exact renderer arguments (immediate-dump: one
+  `BuildSystemPromptOptions` value; provider-dump: `{ header, payload }`;
+  output-test-result: `{ header, responseText }`) and `<name>.md` holds
+  the expected bytes. The golden test reads the input JSON, calls the
+  renderer, and byte-compares against the `.md`; no synthetic input lives
+  only in a test. Blessing: the packet that lands a golden generates the
+  `.md` from the pinned input, and the phase reviewer checks it line by
+  line against the pinned format before it is committed.
 - `../artifacts/inspect/`, `../artifacts/output-tests/` — container-level
   output directories, created recursively on demand, never read by product
   code.
@@ -180,10 +189,13 @@ part of verify.sh.
   `^[a-z0-9-]+\.md$` (single line, no path separators). Anything else is
   invalid and falls back to `default.md`.
 - Provider/model metadata source: `ctx.model.provider` and `ctx.model.id`
-  (available on both command context and event context).
+  (available on both command context and event context) through
+  `modelLabel(ctx.model)`. `ctx.model` is typed `Model | undefined`; when
+  it is undefined, both provider and modelId are the literal `unknown`, in
+  headers and filenames alike.
 - Placeholders are optional in a template: an absent placeholder means the
   owner omitted that section deliberately, and `replaceAll` no-ops
-  (subject to R2).
+  (subject to O2).
 - Empty-store behaviors: `switch` with zero listed templates notifies
   "no templates found" and exits; `new` when `readActiveTemplate` returns
   null notifies "no active template to copy" and exits.
@@ -253,7 +265,11 @@ export function scaffoldTemplate(dir: string, name: string, content: string): st
 // invalid or file exists
 
 // lib/inspect.ts
-export function renderImmediateDump(options: SystemPromptOptions): string;
+import type { BuildSystemPromptOptions } from "@earendil-works/pi-coding-agent";
+export function modelLabel(
+  model: { provider: string; id: string } | undefined,
+): { provider: string; modelId: string }; // undefined -> "unknown"/"unknown"
+export function renderImmediateDump(options: BuildSystemPromptOptions): string;
 export function extractSystemPromptFromPayload(payload: unknown): string | null;
 // recognizes: payload.system string; payload.system {text}[] blocks joined
 // with "\n\n"; payload.messages[0].role "system"|"developer" with string or
@@ -292,7 +308,7 @@ interface ResultHeader {
   provider: string;
   modelId: string;
   activeTemplate: string; // "(stock)" when fail-open left the stock prompt
-  templateSha256: string | null; // hex sha256 of template content, null for "(stock)" (R1)
+  templateSha256: string | null; // hex sha256 of template content, null for "(stock)" (O1)
 }
 ```
 
@@ -361,7 +377,9 @@ P1.1 (1–4), plus 2 new in P1.1 (5–6):
 `tests/wiring.test.ts` — command and hook glue through the real `index.ts`
 default export against a stub ExtensionAPI, always constructed through
 the `paths` seam with temp directories; 3 in P1.3 (16, 17, 32), 1 in P1.4
-(33), 2 in P2.1 (18, 38), 2 in P2.2 (19, 34), 3 in P3.1 (20, 36, 37):
+(33), 2 in P2.1 (18, 38), 2 in P2.2 (19, 34), 3 in P3.1 (20, 36, 37).
+Every header written through the wiring uses `modelLabel`, so the
+`unknown` fallback reaches files without a separate wiring test:
 
 16. `wiring: switch action writes the pointer through the registered command`
 17. `wiring: cancelled picker writes nothing`
@@ -381,17 +399,21 @@ the `paths` seam with temp directories; 3 in P1.3 (16, 17, 32), 1 in P1.4
     (unwritable artifacts dir; the inspect action notifies at level
     "error", arms nothing, and does not throw)
 
-`tests/inspect.test.ts` — 1 in P2.1 (21), 7 in P2.2 (22–27, 31):
+`tests/inspect.test.ts` — 2 in P2.1 (21, 39), 7 in P2.2 (22–27, 31):
 
-21. `immediate dump: golden byte-compare` (against
+21. `immediate dump: golden byte-compare` (input
+    `fixtures/golden/immediate-dump.input.json`, expected
     `fixtures/golden/immediate-dump.md`, covering all sections)
+39. `model label: undefined model yields unknown provider and model id`
+    (and a defined model passes provider and id through unchanged)
 22. `extract: anthropic string system`
 23. `extract: anthropic block-array system`
 24. `extract: openai system message`
 25. `extract: openai developer message`
 26. `extract: unrecognized payload returns null and md falls back to JSON`
 27. `arm: capture is one-shot`
-31. `provider dump: golden byte-compare` (against
+31. `provider dump: golden byte-compare` (input
+    `fixtures/golden/provider-dump.input.json`, expected
     `fixtures/golden/provider-dump.md`, covering the header and fenced
     prompt serialization)
 
@@ -399,15 +421,17 @@ the `paths` seam with temp directories; 3 in P1.3 (16, 17, 32), 1 in P1.4
 
 28. `prompt: fixture embedded verbatim after pinned instructions`
 29. `result: filename carries stamp, sanitized provider and model id`
-30. `result: golden byte-compare` (against
+30. `result: golden byte-compare` (input
+    `fixtures/golden/output-test-result.input.json`, expected
     `fixtures/golden/output-test-result.md`, covering header with template
     name and sha256)
 35. `result: assistant text blocks joined, non-text blocks ignored`
 
 Count reconciliation: 4 existing + 34 new = 38 at completion. Per packet:
 P1.1 adds 5–6 (→ 6), P1.2 adds 7–12 (→ 12), P1.3 adds 16, 17, 32 (→ 15),
-P1.4 adds 13–15 and 33 (→ 19), P2.1 adds 18, 21, 38 (→ 22), P2.2 adds 19,
-22–27, 31, 34 (→ 31), P3.1 adds 20, 28–30, 35–37 (→ 38). These are the
+P1.4 adds 13–15 and 33 (→ 19), P2.1 adds 18, 21, 38, 39 (→ 23), P2.2
+adds 19, 22–27, 31, 34 (→ 32), P3.1 adds 20, 28–30, 35–37 (→ 39). These
+are the
 totals the Verification contract pins.
 
 ### Least confident decisions
@@ -427,7 +451,7 @@ Files: index.ts, lib/splice.ts, tests/rewrite.test.ts
 Changes: Move `splitTail`, `extract`, and the render logic verbatim from
 index.ts into lib/splice.ts as `splitTail`, `extract`,
 `renderTemplate(template, core) -> string | null` (null on any
-failed anchor extraction; absent placeholders no-op per R2).
+failed anchor extraction; absent placeholders no-op per O2).
 index.ts keeps registration and the stand-down checks, reads
 the template from its current SYSTEM.template.md path, and
 calls the lib functions. No behavior change to the splice.
@@ -506,27 +530,31 @@ Commit before Phase 2.
 ### P2.1 — Immediate dump
 
 Files: index.ts, lib/inspect.ts, tests/inspect.test.ts,
-tests/wiring.test.ts, fixtures/golden/immediate-dump.md
-Changes: `renderImmediateDump` per the pinned immediate-dump format.
-The `inspect` action (replacing the K5 placeholder) writes
-`../artifacts/inspect/<stamp>-immediate.md` and notifies the
-path. Golden fixture created from a synthetic
-SystemPromptOptions value pinned in the test.
-Acceptance: verify.sh green; 22 pass, 0 fail (adds tests 18, 21, and 38).
+tests/wiring.test.ts, fixtures/golden/immediate-dump.input.json,
+fixtures/golden/immediate-dump.md
+Changes: `modelLabel` and `renderImmediateDump` per the pinned
+immediate-dump format. The `inspect` action (replacing the K5
+placeholder) writes `../artifacts/inspect/<stamp>-immediate.md` and
+notifies the path. Golden pair created per the Layout blessing rule: a
+`BuildSystemPromptOptions` value exercising every section is committed as
+the input JSON and the rendered bytes as the `.md`.
+Acceptance: verify.sh green; 23 pass, 0 fail (adds tests 18, 21, 38, and
+39).
 Falsification witness: dropping the skills section from the
 renderer turns the golden compare (21) red.
 
 ### P2.2 — Armed ground-truth capture
 
 Files: index.ts, lib/inspect.ts, tests/inspect.test.ts,
-tests/wiring.test.ts, fixtures/golden/provider-dump.md
+tests/wiring.test.ts, fixtures/golden/provider-dump.input.json,
+fixtures/golden/provider-dump.md
 Changes: `armCapture`/`takeArmedCapture` one-shot in-memory state; the
 inspect action arms after the immediate dump and notifies
 "send any message to capture the ground-truth dump"
 (checkpoint D4). `before_provider_request` handler per the
 pinned call stack: extraction rules, `.md` + `.txt` pair,
 JSON fallback, sha256-prefixed notify, no payload replacement.
-Acceptance: verify.sh green; 31 pass, 0 fail (adds tests 19, 22–27, 31,
+Acceptance: verify.sh green; 32 pass, 0 fail (adds tests 19, 22–27, 31,
 and 34); test 19 asserts the `.txt` bytes equal the synthetic payload's
 system string exactly, test 31 byte-compares the `.md` serialization
 against its golden, and test 34 stubs a throwing write and asserts the
@@ -535,7 +563,7 @@ takeArmedCapture return the stamp twice turns test 27 red.
 
 ### Phase 2 gate
 
-Runnable: verify.sh green, 31 unit tests pass, 0 fail.
+Runnable: verify.sh green, 32 unit tests pass, 0 fail.
 Eye check: in a live session with at least one other prompt-touching
 extension loaded, `/sysprompt inspect` then one message writes all three
 files; `sha256sum <stamp>-provider.txt` matches the notified hash prefix
@@ -552,14 +580,15 @@ Commit before Phase 3.
 ### P3.1 — Output test action
 
 Files: index.ts, lib/output-test.ts, tests/output-test.test.ts,
-tests/wiring.test.ts, fixtures/golden/output-test-result.md,
-fixtures/output-test-document.md (read-only dependency)
+tests/wiring.test.ts, fixtures/golden/output-test-result.input.json,
+fixtures/golden/output-test-result.md, fixtures/output-test-document.md
+(read-only dependency)
 Changes: lib/output-test.ts per the pinned signatures and formats
-(OUTPUT_TEST_PROMPT frozen per D3; templateSha256 per R1). The
+(OUTPUT_TEST_PROMPT frozen per D3; templateSha256 per O1). The
 `test` action (replacing the K5 placeholder) per the pinned
 call stack; attribution via `lastRender` per Interfaces; modelId and
 provider sanitized per Interfaces.
-Acceptance: verify.sh green; 38 pass, 0 fail (adds tests 20, 28–30, and
+Acceptance: verify.sh green; 39 pass, 0 fail (adds tests 20, 28–30, and
 35–37); test 20 drives a stub turn where before_agent_start failed open
 and asserts the header records `(stock)` with no sha line; test 36 is the
 positive twin asserting the rendered template's name and sha256; test 37
@@ -569,7 +598,7 @@ test 28 red.
 
 ### Phase 3 gate
 
-Runnable: verify.sh green, 38 unit tests pass, 0 fail.
+Runnable: verify.sh green, 39 unit tests pass, 0 fail.
 Eye check: one live `/sysprompt test` run produces a results file whose
 header names the active template, its sha256, and the current model, and
 whose body is the model's summary; owner eyeballs it as the first corpus
@@ -603,13 +632,13 @@ Commit; build complete, hand to as-built pass.
 
 ## Ratification items
 
-- R1 (blocks: P3.1): record the sha256 of the active template's content in
+- O1 (blocks: P3.1): record the sha256 of the active template's content in
   the output-test result header, so a result attributes to the exact
   template version rather than a name that may have been edited since.
   Keeping: one hash line per result, `node:crypto`, no new dependency.
   Rejecting: results attribute by name only, and template edits silently
   break cross-run comparability. Recommendation: adopt.
-- R2 (blocks: P1.1): placeholders are optional in a template. An absent
+- O2 (blocks: P1.1): placeholders are optional in a template. An absent
   placeholder no-ops, so the owner can deliberately omit the tools list,
   guidelines, or Pi docs from a template. Keeping: templates are free-form
   and the splice never rejects owner prose. Rejecting: a template missing
@@ -627,7 +656,7 @@ Commit; build complete, hand to as-built pass.
 
 ## Handoff notes
 
-- Entry point: P1.1 (after R2 is ruled; R1 before P3.1). Base commit:
+- Entry point: P1.1 (after O2 is ruled; O1 before P3.1). Base commit:
   `51a27ef47f90cb5399644e9f8d6c22b11b25197a` (contains DESIGN.md as
   ratified, the fixture, and this plan's draft).
 - Home machine: willow. Repo: `~/projects/pi-sysprompt-editor/main`,
@@ -640,12 +669,15 @@ Commit; build complete, hand to as-built pass.
   exposes `event.payload`; `turn_end` carries `event.message`;
   `ctx.getSystemPromptOptions()` is command-context only; `ctx.ui.select/
 input` return undefined on cancel; `pi.sendUserMessage` always triggers a
-  turn when idle; `ctx.model` carries `.provider` and `.id`.
+  turn when idle; `ctx.model` is `Model | undefined` and carries
+  `.provider` and `.id` when defined (`modelLabel` covers undefined);
+  `getSystemPromptOptions()` returns `BuildSystemPromptOptions`, the
+  package's exported name.
 - Toolchain: node 22.x (v22.23.1 verified), `--experimental-strip-types`,
   typescript 7.0.2, prettier 3.9.6; verify.sh runs `npm ci` first and
   asserts the node major.
 - Freezability: DESIGN.md, this plan, `templates/default.md`, the fixture,
-  the golden fixtures under `fixtures/golden/`, and the unit suites'
+  the golden pairs under `fixtures/golden/`, and the unit suites'
   synthetic stock prompt are the rebuild set; the wiring suite freezes the
   command and hook glue.
 
@@ -692,3 +724,10 @@ input` return undefined on cancel; `pi.sendUserMessage` always triggers a
   representation pinned to decoded strings via `fileURLToPath` in Layout
   and Types, catch-fallback removed from P1.2 (delete TEMPLATE_FALLBACK);
   immediate-dump write failure gained test 38 in P2.1 (38 final).
+- Round 6: FAIL with materials —
+  `plans/2026-08-17-template-manager.lint-6.md`. Fixed: goldens became
+  input/expected pairs with a blessing rule (no synthetic input lives only
+  in a test); `SystemPromptOptions` corrected to the package's
+  `BuildSystemPromptOptions`; undefined `ctx.model` pinned to `unknown`
+  via `modelLabel` with test 39 in P2.1 (39 final); ratification items
+  renamed O1/O2 to stop colliding with the Basis R1/R2 rows.
