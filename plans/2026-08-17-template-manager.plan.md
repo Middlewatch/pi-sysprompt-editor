@@ -36,7 +36,7 @@ byte copy of the active template`.
   stock shape, unrecognized payload shape) leaves the prompt or artifact in
   the documented fallback state. Verified by named unit tests, one per
   branch.
-- `scripts/verify.sh` exits 0 with 39 unit tests passing, 0 failing.
+- `scripts/verify.sh` exits 0 with 42 unit tests passing, 0 failing.
 
 ## Fixed decisions
 
@@ -97,8 +97,8 @@ cd ~/projects/pi-sysprompt-editor/main && ./scripts/verify.sh
 Green is: node 22.x asserted, `npm ci` clean, `prettier --check` clean,
 `tsc --noEmit` clean, `node --experimental-strip-types --test
 tests/*.test.ts` all pass, 0 fail. Test count by packet: baseline 4
-(existing `tests/rewrite.test.ts`), P1.1 → 6, P1.2 → 12, P1.3 → 15,
-P1.4 → 19, P2.1 → 23, P2.2 → 32, P3.1 → 39. Live checks that need a real
+(existing `tests/rewrite.test.ts`), P1.1 → 6, P1.2 → 12, P1.3 → 16,
+P1.4 → 20, P2.1 → 25, P2.2 → 34, P3.1 → 42. Live checks that need a real
 session are phase gate eye checks, named in each phase gate, and are not
 part of verify.sh.
 
@@ -212,22 +212,93 @@ part of verify.sh.
   output-test result header reads `lastRender` at `turn_end`, so it
   records what actually rendered on the test turn rather than what was
   active at command time.
-- File format, provider dump `.md`: H1 header block (timestamp,
-  provider/model), then the extracted system prompt verbatim inside a
-  fenced block. Unrecognized payload shape: a note line, then
-  `JSON.stringify(payload, null, 2)` in a ```json fence; if stringify
-  throws, the note line plus `String(payload)`. The `.txt` twin is written
+- Serialization rules shared by all three formats: lines are joined with
+  `\n`, blocks are separated by exactly one blank line, the file ends with
+  exactly one `\n`, lists render one `- ` bullet per item and the single
+  line `(none)` when empty or absent, and a fenced block uses a run of
+  backticks one longer than the longest backtick run inside the fenced
+  content (minimum three) so any prompt survives fencing. `<stamp>` is the
+  same value used in the filename. Golden-pinned means the committed
+  golden pair is the byte-level witness of these rules.
+- File format, provider dump `.md` (recognized payload):
+
+  ```text
+  # Provider system prompt (ground truth)
+
+  - timestamp: <stamp>
+  - provider: <provider>
+  - model: <modelId>
+
+  <fence>
+  <extracted system prompt verbatim>
+  <fence>
+  ```
+
+  Unrecognized payload shape: the same header block, then the line
+  `Unrecognized payload shape; raw payload follows.`, a blank line, then
+  `JSON.stringify(payload, null, 2)` inside a fence whose opening line
+  carries the info string `json`; if stringify throws, the note line, a
+  blank line, then `String(payload)` unfenced. The `.txt` twin is written
   only when extraction succeeds.
-- File format, output-test result: header lines (timestamp,
-  provider/model, active template name, `template-sha256:` of the active
-  template's content, or `(stock)` and no sha line when fail-open left the
-  stock prompt), a `---` separator, then the assistant message text
-  verbatim. Golden-pinned.
-- File format, immediate dump: header line naming it a best-effort rebuild
-  at command time that excludes other extensions' per-turn changes, then
-  sections: custom prompt (present/absent only), selected tools with
-  snippets, prompt guidelines, appended system prompt text, context file
-  paths with byte sizes (paths only, never content), skill names.
+- File format, output-test result:
+
+  ```text
+  # Output test
+
+  - timestamp: <stamp>
+  - provider: <provider>
+  - model: <modelId>
+  - template: <active template name>
+  - template-sha256: <64 hex>
+
+  ---
+
+  <assistant text verbatim>
+  ```
+
+  When fail-open left the stock prompt, the template line reads
+  `- template: (stock)` and the `template-sha256` line is omitted.
+  Golden-pinned.
+- File format, immediate dump (no timestamp or model lines; the stamp is
+  in the filename and the renderer takes only the options value):
+
+  ```text
+  # System prompt (best-effort rebuild at command time)
+
+  Rebuilt from ctx.getSystemPromptOptions() when the command ran. It
+  excludes per-turn changes made by other extensions; the provider
+  capture is the ground truth.
+
+  ## Custom prompt
+
+  present | absent
+
+  ## Selected tools
+
+  - <tool>: <snippet>      (or `- <tool>` when it has no snippet)
+
+  ## Prompt guidelines
+
+  - <guideline>
+
+  ## Appended system prompt
+
+  <fence>
+  <appendSystemPrompt verbatim>
+  <fence>
+
+  ## Context files
+
+  - <path> (<utf-8 byte length> bytes)
+
+  ## Skills
+
+  - <skill name>
+  ```
+
+  Each list section renders `(none)` when empty or absent, and the
+  appended-prompt section renders `(none)` in place of the fence when
+  absent. Context files render paths and sizes only, never content.
   Golden-pinned.
 
 ### Types and signatures
@@ -380,8 +451,9 @@ P1.1 (1–4), plus 2 new in P1.1 (5–6):
 
 `tests/wiring.test.ts` — command and hook glue through the real `index.ts`
 default export against a stub ExtensionAPI, always constructed through
-the `paths` seam with temp directories; 3 in P1.3 (16, 17, 32), 1 in P1.4
-(33), 2 in P2.1 (18, 38), 2 in P2.2 (19, 34), 3 in P3.1 (20, 36, 37).
+the `paths` seam with temp directories; 4 in P1.3 (16, 17, 32, 40), 1 in
+P1.4 (33), 2 in P2.1 (18, 38), 2 in P2.2 (19, 34), 4 in P3.1 (20, 36, 37,
+42).
 Every header written through the wiring uses `modelLabel`, so the
 `unknown` fallback reaches files without a separate wiring test:
 
@@ -402,8 +474,16 @@ Every header written through the wiring uses `modelLabel`, so the
 38. `wiring: immediate dump write failure notifies error and does not arm`
     (unwritable artifacts dir; the inspect action notifies at level
     "error", arms nothing, and does not throw)
+40. `wiring: unknown argument notifies usage and does nothing`
+    (`/sysprompt bogus` notifies the usage line, opens no picker, writes
+    nothing, arms nothing)
+42. `wiring: test with missing fixture notifies error and sends nothing`
+    (fixturePath pointing at a non-existent file; the test action
+    notifies at level "error", calls `pi.sendUserMessage` zero times, and
+    records no pending capture)
 
-`tests/inspect.test.ts` — 2 in P2.1 (21, 39), 7 in P2.2 (22–27, 31):
+`tests/inspect.test.ts` — 3 in P2.1 (21, 27, 39), 7 in P2.2 (22–26, 31,
+41):
 
 21. `immediate dump: golden byte-compare` (input
     `fixtures/golden/immediate-dump.input.json`, expected
@@ -416,6 +496,10 @@ Every header written through the wiring uses `modelLabel`, so the
 25. `extract: openai developer message`
 26. `extract: unrecognized payload returns null and md falls back to JSON`
 27. `arm: capture is one-shot`
+41. `extract: stringify-throwing payload renders the note plus String(payload)`
+    (a payload with a circular reference; `renderProviderDump` returns
+    `txt: null` and an `md` whose body is the note line, a blank line, and
+    `String(payload)` with no fence)
 31. `provider dump: golden byte-compare` (input
     `fixtures/golden/provider-dump.input.json`, expected
     `fixtures/golden/provider-dump.md`, covering the header and fenced
@@ -434,11 +518,11 @@ Every header written through the wiring uses `modelLabel`, so the
     blocks yields the two texts joined with `"\n\n"`; a message with no
     text blocks yields `""`)
 
-Count reconciliation: 4 existing + 35 new = 39 at completion. Per packet:
-P1.1 adds 5–6 (→ 6), P1.2 adds 7–12 (→ 12), P1.3 adds 16, 17, 32 (→ 15),
-P1.4 adds 13–15 and 33 (→ 19), P2.1 adds 18, 21, 38, 39 (→ 23), P2.2
-adds 19, 22–27, 31, 34 (→ 32), P3.1 adds 20, 28–30, 35–37 (→ 39). These
-are the
+Count reconciliation: 4 existing + 38 new = 42 at completion. Per packet:
+P1.1 adds 5–6 (→ 6), P1.2 adds 7–12 (→ 12), P1.3 adds 16, 17, 32, 40
+(→ 16), P1.4 adds 13–15 and 33 (→ 20), P2.1 adds 18, 21, 27, 38, 39
+(→ 25), P2.2 adds 19, 22–26, 31, 34, 41 (→ 34), P3.1 adds 20, 28–30,
+35–37, 42 (→ 42). These are the
 totals the Verification contract pins.
 
 ### Least confident decisions
@@ -499,8 +583,8 @@ built yet" until P1.4/P2.1/P3.1 replace them (carried as K5). Arg
 matching an action jumps straight to it; unknown arg notifies
 usage. `switch` per the pinned Interfaces flow. Esc at any
 picker cancels with no write.
-Acceptance: verify.sh green; 15 pass, 0 fail (adds wiring tests 16, 17,
-and 32 driving the registered command through a stub ExtensionAPI
+Acceptance: verify.sh green; 16 pass, 0 fail (adds wiring tests 16, 17,
+32, and 40 driving the registered command through a stub ExtensionAPI
 with stubbed ctx.ui). Falsification witness: writing the
 pointer before the select resolves turns test 17 red.
 
@@ -512,13 +596,13 @@ Changes: `scaffoldTemplate` per the pinned signature and validation.
 Wire the `new` action per the pinned call stack: `ctx.ui.input`, then
 readActiveTemplate (null: notify "no active template to copy"), then
 scaffold, notify created path or the error message.
-Acceptance: verify.sh green; 19 pass, 0 fail (adds tests 13–15 and 33).
+Acceptance: verify.sh green; 20 pass, 0 fail (adds tests 13–15 and 33).
 Falsification witness: removing the existing-file check turns
 test 15 red.
 
 ### Phase 1 gate
 
-Runnable: `./scripts/verify.sh` green, 19 unit tests pass, 0 fail.
+Runnable: `./scripts/verify.sh` green, 20 unit tests pass, 0 fail.
 Eye check (owner or builder in a live session): `/sysprompt` opens the
 menu; `switch` to a second template visibly changes the next reply's
 voice; `new` creates a template that then appears in the switch list;
@@ -539,14 +623,17 @@ Commit before Phase 2.
 Files: index.ts, lib/inspect.ts, tests/inspect.test.ts,
 tests/wiring.test.ts, fixtures/golden/immediate-dump.input.json,
 fixtures/golden/immediate-dump.md
-Changes: `modelLabel` and `renderImmediateDump` per the pinned
-immediate-dump format. The `inspect` action (replacing the K5
-placeholder) writes `../artifacts/inspect/<stamp>-immediate.md` and
-notifies the path. Golden pair created per the Layout blessing rule: a
+Changes: `modelLabel`, `renderImmediateDump` per the pinned
+immediate-dump format, and the `armCapture`/`takeArmedCapture` one-shot
+in-memory state. The `inspect` action (replacing the K5 placeholder)
+writes `../artifacts/inspect/<stamp>-immediate.md`, arms capture with
+that stamp, and notifies the path plus "send any message to capture the
+ground-truth dump" (checkpoint D4); nothing consumes the armed state
+until P2.2. Golden pair created per the Layout blessing rule: a
 `BuildSystemPromptOptions` value exercising every section is committed as
 the input JSON and the rendered bytes as the `.md`.
-Acceptance: verify.sh green; 23 pass, 0 fail (adds tests 18, 21, 38, and
-39).
+Acceptance: verify.sh green; 25 pass, 0 fail (adds tests 18, 21, 27, 38,
+and 39).
 Falsification witness: dropping the skills section from the
 renderer turns the golden compare (21) red.
 
@@ -555,22 +642,23 @@ renderer turns the golden compare (21) red.
 Files: index.ts, lib/inspect.ts, tests/inspect.test.ts,
 tests/wiring.test.ts, fixtures/golden/provider-dump.input.json,
 fixtures/golden/provider-dump.md
-Changes: `armCapture`/`takeArmedCapture` one-shot in-memory state; the
-inspect action arms after the immediate dump and notifies
-"send any message to capture the ground-truth dump"
-(checkpoint D4). `before_provider_request` handler per the
-pinned call stack: extraction rules, `.md` + `.txt` pair,
-JSON fallback, sha256-prefixed notify, no payload replacement.
-Acceptance: verify.sh green; 32 pass, 0 fail (adds tests 19, 22–27, 31,
-and 34); test 19 asserts the `.txt` bytes equal the synthetic payload's
-system string exactly, test 31 byte-compares the `.md` serialization
-against its golden, and test 34 stubs a throwing write and asserts the
-error notify plus cleared capture state. Falsification witness: making
-takeArmedCapture return the stamp twice turns test 27 red.
+Changes: `extractSystemPromptFromPayload` and `renderProviderDump` per
+the pinned formats; `before_provider_request` handler per the pinned
+call stack: `takeArmedCapture` (state landed in P2.1), extraction rules,
+`.md` + `.txt` pair, JSON and String fallbacks, sha256-prefixed notify,
+no payload replacement.
+Acceptance: verify.sh green; 34 pass, 0 fail (adds tests 19, 22–26, 31,
+34, and 41); test 19 asserts the `.txt` bytes equal the synthetic
+payload's system string exactly, test 31 byte-compares the `.md`
+serialization against its golden, test 34 stubs a throwing write and
+asserts the error notify plus cleared capture state, and test 41 covers
+the stringify-throws fallback. Falsification witness: writing the `.txt`
+twin when extraction returned null turns test 26 red, and dropping the
+`.txt` write turns test 19 red.
 
 ### Phase 2 gate
 
-Runnable: verify.sh green, 32 unit tests pass, 0 fail.
+Runnable: verify.sh green, 34 unit tests pass, 0 fail.
 Eye check: in a live session with at least one other prompt-touching
 extension loaded, `/sysprompt inspect` then one message writes all three
 files; `sha256sum <stamp>-provider.txt` matches the notified hash prefix
@@ -595,17 +683,18 @@ Changes: lib/output-test.ts per the pinned signatures and formats
 `test` action (replacing the K5 placeholder) per the pinned
 call stack; attribution via `lastRender` per Interfaces; modelId and
 provider sanitized per Interfaces.
-Acceptance: verify.sh green; 39 pass, 0 fail (adds tests 20, 28–30, and
-35–37); test 20 drives a stub turn where before_agent_start failed open
-and asserts the header records `(stock)` with no sha line; test 36 is the
-positive twin asserting the rendered template's name and sha256; test 37
-proves result-write failure notifies, clears pending state, and does not
-throw. Falsification witness: changing OUTPUT_TEST_PROMPT wording turns
+Acceptance: verify.sh green; 42 pass, 0 fail (adds tests 20, 28–30,
+35–37, and 42); test 20 drives a stub turn where before_agent_start
+failed open and asserts the header records `(stock)` with no sha line;
+test 36 is the positive twin asserting the rendered template's name and
+sha256; test 37 proves result-write failure notifies, clears pending
+state, and does not throw; test 42 proves the missing-fixture branch
+sends nothing. Falsification witness: changing OUTPUT_TEST_PROMPT wording turns
 test 28 red.
 
 ### Phase 3 gate
 
-Runnable: verify.sh green, 39 unit tests pass, 0 fail.
+Runnable: verify.sh green, 42 unit tests pass, 0 fail.
 Eye check: one live `/sysprompt test` run produces a results file whose
 header names the active template, its sha256, and the current model, and
 whose body is the model's summary; owner eyeballs it as the first corpus
@@ -747,3 +836,12 @@ input` return undefined on cancel; `pi.sendUserMessage` always triggers a
   extraction had a rule and a test (35) but no pinned function; added
   `assistantText(message)` to `lib/output-test.ts` in Types, the Test
   call stack, and test 35's description.
+- Round 9: FAIL with materials —
+  `plans/2026-08-17-template-manager.lint-9.md`. Fixed: arm state
+  (`armCapture`/`takeArmedCapture`, test 27) moved from P2.2 into P2.1 so
+  tests 18 and 38 are satisfiable in the packet that owns them, P2.2
+  given new falsification witnesses; the three artifact formats pinned
+  as exact byte layouts with shared serialization and fence rules; three
+  untested Interface branches gained tests 40 (unknown argument, P1.3),
+  41 (stringify-throws fallback, P2.2), and 42 (missing fixture, P3.1);
+  totals rederived to 16/20/25/34/42 (42 final).
