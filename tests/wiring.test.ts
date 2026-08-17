@@ -282,12 +282,26 @@ test("wiring: immediate dump write failure notifies error and does not arm", asy
   const blocker = path.join(tempDir("blocker"), "artifacts");
   fs.writeFileSync(blocker, "not a directory");
   const h = harness({ artifactsDir: blocker });
+  armCapture("stale"); // an earlier arm is cleared by the failed inspect
   const ui = stubUi({});
   await h.command("inspect", ui.ctx);
   assert.equal(ui.notices.length, 1);
   assert.equal(ui.notices[0]!.type, "error");
-  assert.equal(takeArmedCapture(), null, "nothing armed");
+  assert.equal(takeArmedCapture(), null, "nothing armed, stale arm cleared");
   assert.equal(fs.readFileSync(blocker, "utf8"), "not a directory");
+  // A throwing getSystemPromptOptions is contained the same way.
+  const ok = harness();
+  armCapture("stale");
+  const thrower = stubUi({});
+  thrower.ctx.getSystemPromptOptions = () => {
+    throw new Error("options unavailable");
+  };
+  await assert.doesNotReject(ok.command("inspect", thrower.ctx));
+  assert.deepEqual(thrower.notices, [
+    { message: "options unavailable", type: "error" },
+  ]);
+  assert.equal(takeArmedCapture(), null);
+  assert.equal(fs.existsSync(path.join(ok.artifactsDir, "inspect")), false);
 });
 
 test("wiring: armed capture writes provider md and raw txt with payload bytes", async () => {
@@ -360,4 +374,39 @@ test("wiring: artifact write failure notifies error and clears capture state", a
   assert.equal(ui.notices[0]!.type, "error");
   assert.equal(takeArmedCapture(), null, "capture state cleared");
   assert.equal(fs.readFileSync(blocker, "utf8"), "not a directory");
+  // Render throw (a payload whose `system` getter throws): contained.
+  const ok = harness();
+  const okHook = ok.handlers.get("before_provider_request")!;
+  const inspectDir = path.join(ok.artifactsDir, "inspect");
+  armCapture("2026-01-02-030405");
+  const thrower = stubUi({});
+  const evil = {
+    get system(): string {
+      throw new Error("payload exploded");
+    },
+  };
+  await assert.doesNotReject(okHook({ payload: evil }, thrower.ctx));
+  assert.deepEqual(thrower.notices, [
+    { message: "payload exploded", type: "error" },
+  ]);
+  assert.equal(takeArmedCapture(), null);
+  assert.equal(fs.existsSync(inspectDir), false);
+  // .md succeeds but the .txt write fails: a dangling symlink at the .txt
+  // path is invisible to freeBase (existsSync follows links) yet makes the
+  // write hit ENOENT. Error notify, state cleared, no throw.
+  fs.mkdirSync(inspectDir, { recursive: true });
+  fs.symlinkSync(
+    "/nonexistent-sysprompt-dir/target.txt",
+    path.join(inspectDir, "2026-01-02-030405-provider.txt"),
+  );
+  armCapture("2026-01-02-030405");
+  const txtFail = stubUi({});
+  await assert.doesNotReject(okHook({ payload: { system: "S" } }, txtFail.ctx));
+  assert.ok(
+    fs.existsSync(path.join(inspectDir, "2026-01-02-030405-provider.md")),
+  );
+  assert.equal(txtFail.notices.length, 1);
+  assert.equal(txtFail.notices[0]!.type, "error");
+  assert.match(txtFail.notices[0]!.message, /ENOENT/);
+  assert.equal(takeArmedCapture(), null);
 });

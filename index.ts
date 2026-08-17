@@ -201,6 +201,7 @@ export default function systemPromptExtension(
     try {
       dump = renderImmediateDump(ctx.getSystemPromptOptions());
     } catch (err) {
+      takeArmedCapture();
       ctx.ui.notify(err instanceof Error ? err.message : String(err), "error");
       return;
     }
@@ -210,8 +211,9 @@ export default function systemPromptExtension(
     );
     const failure = writeArtifact(file, dump);
     if (failure !== null) {
+      takeArmedCapture(); // clear any earlier arm; nothing newly armed
       ctx.ui.notify(failure, "error");
-      return; // nothing armed
+      return;
     }
     armCapture(stamp);
     ctx.ui.notify(

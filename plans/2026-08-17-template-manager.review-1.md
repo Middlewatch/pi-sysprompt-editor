@@ -73,3 +73,59 @@ FAIL — MAJOR findings remain open.
 ## Verdict
 
 PASS — no CRITICAL or MAJOR finding remains open; F5 is an owner-queued NOTE.
+
+## Phase 2 review
+
+Reviewer: fresh-context Sol, 2026-08-17
+
+Summary: 0 CRITICAL, 1 MAJOR, 2 MINOR, 2 NOTE.
+
+## F7 — MAJOR — Armed inspection is unavailable on the owner’s claude-go bridge
+
+**Evidence:** The inspect action promises that sending any message will capture the ground-truth dump, but only `before_provider_request` consumes the armed state (`index.ts:147-165`, `index.ts:216-219`). The executor-provided environment fact says the custom claude-go bridge never calls `options.onPayload`, so Pi never emits that event for bridge turns. The plan’s Phase 2 gate explicitly required review of the owner’s providers, including claude-go (`plans/2026-08-17-template-manager.plan.md:719-730`).
+
+**Why it matters:** State remaining armed, with no file and no exception, is safe fail-open behavior. However, the advertised “send any message” workflow does not work on the owner’s primary provider. The next native-provider turn can unexpectedly consume the stale arm and produce a dump for a later, unrelated turn under the earlier stamp.
+
+**Suggested fix:** Resolve before freezing through either a bridge change that invokes `onPayload`, or an explicit contract/UI amendment documenting that custom providers without payload callbacks cannot be captured and how an outstanding arm is handled.
+
+## F8 — MINOR — Pinned recognizers omit two built-in Pi payload families
+
+**Evidence:** The implementation recognizes only top-level Anthropic `system` and leading OpenAI-style `messages[0]` (`lib/inspect.ts:130-154`), exactly matching the pinned interface (`plans/2026-08-17-template-manager.plan.md:371-380`). Installed Pi’s Anthropic adapter sends a text-block `system` array (`node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js:723-748`), and OpenAI Chat prepends a system/developer string message (`node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-completions.js:834-839`), so those are covered.
+
+Installed Pi’s Responses adapter instead sends the converted messages under `input` (`node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-responses.js:192-212`); its leading system/developer item is built at `node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/openai-responses-shared.js:88-96`. It does not currently use a top-level `instructions` field. Gemini sends `config.systemInstruction` (`node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai/dist/api/google-generative-ai.js:275-320`). Both adapters invoke `onPayload` before sending (`openai-responses.js:98-103`; `google-generative-ai.js:39-45`), but extraction falls back to JSON and produces no raw `.txt`.
+
+**Why it matters:** Responses and Gemini captures cannot satisfy byte-comparison acceptance, although the fallback remains non-throwing. A future Responses `instructions` payload would also be unrecognized.
+
+**Suggested fix:** Treat `input`, `instructions`, and Gemini `config.systemInstruction` as K3 CONTRACT AMENDMENT candidates rather than silently expanding the pinned recognizers; K3 explicitly assigns recurring real shapes that process (`plans/2026-08-17-template-manager.plan.md:780-782`).
+
+## F9 — MINOR — Failure-path tests do not establish the full containment claim
+
+**Evidence:** The immediate failure test exercises only a blocking file that makes directory creation fail and starts with no deliberately pre-existing arm (`tests/wiring.test.ts:280-290`). The provider failure test likewise reaches the first artifact’s mkdir/write wrapper only (`tests/wiring.test.ts:351-363`). No wiring test forces a successful `.md` followed by failing `.txt`, or makes `renderProviderDump` throw. Consequently, an implementation that catches only first-file failures but throws on the `.txt` or render path could pass these tests. The positive armed test does adequately assert undefined returns, exact raw text, one-shot consumption, and md-only fallback (`tests/wiring.test.ts:293-348`).
+
+**Why it matters:** The suite does not prove the plan’s “any write failure” claim recorded by the executor (`plans/2026-08-17-template-manager.execution.md:123-128`).
+
+**Suggested fix:** Add independent render-throw, md-write, and txt-write failure tests, each asserting error notification, undefined return/no rejection, and cleared armed state; seed an old arm before the immediate-failure case to pin the intended stale-state semantics.
+
+## F10 — NOTE — All three golden byte layouts conform
+
+**Evidence:** The populated immediate golden has the exact heading and explanatory text, required blank lines, `present`, ordered tool/snippet rules, guidelines, five-backtick widened fence, one blank line before its closing fence for trailing-newline content, UTF-8 lengths 18 and 14, and skill names (`fixtures/golden/immediate-dump.md:1-43`; input at `fixtures/golden/immediate-dump.input.json:1-38`). The empty golden uses `absent` and `(none)` in every required section (`fixtures/golden/immediate-dump-empty.md:1-29`). The provider golden has the exact header, four-backtick widened fence, verbatim body, and one blank line before the closing fence caused by the payload’s trailing newline (`fixtures/golden/provider-dump.input.json:1-13`; `fixtures/golden/provider-dump.md:1-19`). These match the pinned layouts and rules (`plans/2026-08-17-template-manager.plan.md:250-268`, `plans/2026-08-17-template-manager.plan.md:288-335`). No deviating byte was found.
+
+**Why it matters:** The committed serialization oracle is internally consistent with the contract.
+
+**Suggested fix:** None.
+
+## F11 — NOTE — Implemented handler containment is correct for the named failure classes
+
+**Evidence:** Armed state is consumed before any provider work (`index.ts:147-149`). Artifact mkdir and writes are caught by `writeArtifact` (`index.ts:136-145`); render exceptions are caught and notified as errors (`index.ts:156-165`); md and txt failures notify at error level and return (`index.ts:170-185`). The callback has no payload-returning branch (`index.ts:147-191`). Immediate render/write failures also notify as errors and do not newly arm (`index.ts:193-216`).
+
+**Why it matters:** For mkdir, md write, txt write, and render failures, the provider handler clears capture state, contains the error, and never replaces the payload.
+
+**Suggested fix:** Preserve this behavior while strengthening F9’s tests.
+
+## Phase 2 freezability
+
+The Phase 2 implementation is substantially rebuildable from DESIGN.md, the plan’s pinned interfaces/call stack, the three golden pairs, and the suites: DESIGN.md defines immediate versus authoritative capture (`DESIGN.md:36-40`), while the plan fixes signatures and wiring (`plans/2026-08-17-template-manager.plan.md:371-394`, `plans/2026-08-17-template-manager.plan.md:445-454`). Provider callback availability and built-in payload families remain external integration facts, so a fully operational rebuild also needs the F7/F8 contract decisions. I could inspect repository evidence but could not run `verify.sh` or live-provider checks with the provided tools; the execution log reports 37 passing tests (`plans/2026-08-17-template-manager.execution.md:129-136`).
+
+## Phase 2 verdict
+
+FAIL — F7 remains an open MAJOR.
