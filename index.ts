@@ -19,11 +19,19 @@
  * no template resolves (pointer and default.md both unusable), the prompt is
  * left exactly as Pi built it.
  */
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
 } from "@earendil-works/pi-coding-agent";
+import {
+  armCapture,
+  freeBase,
+  makeStamp,
+  renderImmediateDump,
+} from "./lib/inspect.ts";
 import { renderTemplate, splitTail } from "./lib/splice.ts";
 import {
   listTemplates,
@@ -63,6 +71,7 @@ export default function systemPromptExtension(
   paths: ExtensionPaths = {},
 ): void {
   const templatesDir = paths.templatesDir ?? resolvePath("./templates/");
+  const artifactsDir = paths.artifactsDir ?? resolvePath("../artifacts/");
 
   pi.on("before_agent_start", async (event: any) => {
     const prompt: string = event.systemPrompt ?? "";
@@ -120,6 +129,46 @@ export default function systemPromptExtension(
     ctx.ui.notify(`created ${created} (copy of ${active.name})`);
   }
 
+  /** mkdir -p then write; returns the error message on failure. */
+  function writeArtifact(file: string, content: string): string | null {
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, content, "utf8");
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  async function actionInspect(ctx: ExtensionCommandContext): Promise<void> {
+    if (artifactsDir === null) {
+      ctx.ui.notify("artifacts directory could not be resolved", "error");
+      return;
+    }
+    const stamp = makeStamp(new Date());
+    const inspectDir = path.join(artifactsDir, "inspect");
+    let dump: string;
+    try {
+      dump = renderImmediateDump(ctx.getSystemPromptOptions());
+    } catch (err) {
+      ctx.ui.notify(err instanceof Error ? err.message : String(err), "error");
+      return;
+    }
+    const file = path.join(
+      inspectDir,
+      freeBase(inspectDir, `${stamp}-immediate`, [".md"]) + ".md",
+    );
+    const failure = writeArtifact(file, dump);
+    if (failure !== null) {
+      ctx.ui.notify(failure, "error");
+      return; // nothing armed
+    }
+    armCapture(stamp);
+    ctx.ui.notify(
+      `wrote ${file}; send any message to capture the ground-truth dump`,
+    );
+  }
+
   async function runAction(
     action: Action,
     ctx: ExtensionCommandContext,
@@ -130,6 +179,7 @@ export default function systemPromptExtension(
       case "new":
         return actionNew(ctx);
       case "inspect":
+        return actionInspect(ctx);
       case "test":
         ctx.ui.notify(`${action}: not built yet`, "warning");
         return;

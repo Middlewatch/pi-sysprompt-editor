@@ -90,3 +90,24 @@ CONTRACT AMENDMENT, or K/R resolution, newest last.
   opens the menu; `switch` to a second template changes the next reply's
   voice; `new` creates a template that then appears in the switch list;
   `git status` shows `templates/.active` ignored. Resolves K1 and F5.
+
+## 2026-08-17 — P2.1 Immediate dump
+
+- `lib/inspect.ts`: `modelLabel`, `makeStamp`, `freeBase`, `fenceFor`/`fenced`
+  (backtick run + 1, min 3), `renderImmediateDump` per the pinned format,
+  `armCapture`/`takeArmedCapture` one-shot module state.
+- `inspect` action replaces the K5 placeholder: renders the dump from
+  `ctx.getSystemPromptOptions()`, resolves `<stamp>-immediate` via
+  `freeBase`, writes under `<artifactsDir>/inspect/`, arms the raw stamp,
+  notifies path + "send any message to capture the ground-truth dump".
+  Write failure notifies at level error and arms nothing.
+- Goldens blessed from pinned inputs: `fixtures/golden/immediate-dump.{input.json,md}`
+  (every section populated; appended prompt contains a 4-backtick run so
+  the fence renders as 5) and `immediate-dump-empty.{input.json,md}` (cwd
+  only). Checked line by line against the plan's format block; utf-8 byte
+  counts verified (18, 14).
+- Tests 18, 38 (wiring), 21, 27, 39, 44, 45 (inspect). Test 40's K5 loop
+  narrowed to `test` only, since `inspect` is now real.
+- verify.sh: exit 0, 28 pass, 0 fail.
+- Falsification witness: red on dropping the skills section from the
+  renderer (tests 21 and 45 fail), green on revert.

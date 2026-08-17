@@ -1,0 +1,38 @@
+{
+  "cwd": "/home/owner/projects/example",
+  "customPrompt": "Owner-authored SYSTEM.md prompt.",
+  "selectedTools": ["read", "bash", "edit", "write", "custom_tool"],
+  "toolSnippets": {
+    "read": "Read file contents",
+    "bash": "Execute bash commands",
+    "edit": "Make precise file edits",
+    "write": ""
+  },
+  "promptGuidelines": [
+    "Use bash for file operations",
+    "Be concise in your responses"
+  ],
+  "appendSystemPrompt": "Appended layer with a fence inside:\n```ts\nconst x = 1;\n```\nand a longer run ```` here.\n",
+  "contextFiles": [
+    { "path": "/home/owner/projects/example/AGENTS.md", "content": "# Project\n\nRules.\n" },
+    { "path": "/home/owner/.pi/agent/AGENTS.md", "content": "héllo wörld\n" }
+  ],
+  "skills": [
+    {
+      "name": "harvest",
+      "description": "Capture a surprising result",
+      "filePath": "/home/owner/.pi/agent/skills/harvest/SKILL.md",
+      "baseDir": "/home/owner/.pi/agent/skills/harvest",
+      "sourceInfo": { "path": "/home/owner/.pi/agent/skills/harvest/SKILL.md", "sourceType": "user" },
+      "disableModelInvocation": false
+    },
+    {
+      "name": "plan",
+      "description": "Draft a plan",
+      "filePath": "/home/owner/.pi/agent/skills/plan/SKILL.md",
+      "baseDir": "/home/owner/.pi/agent/skills/plan",
+      "sourceInfo": { "path": "/home/owner/.pi/agent/skills/plan/SKILL.md", "sourceType": "user" },
+      "disableModelInvocation": false
+    }
+  ]
+}

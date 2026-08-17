@@ -10,6 +10,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import test from "node:test";
 import systemPromptExtension, { type ExtensionPaths } from "../index.ts";
+import { takeArmedCapture } from "../lib/inspect.ts";
 
 type Handler = (event: any, ctx: any) => Promise<any>;
 
@@ -177,8 +178,8 @@ test("wiring: unknown argument notifies usage and does nothing", async () => {
   ]);
   assert.equal(fs.existsSync(path.join(h.templatesDir, ".active")), false);
   assert.deepEqual(fs.readdirSync(h.artifactsDir), []);
-  // K5 placeholders: inspect and test are notify-only until their packets.
-  for (const action of ["inspect", "test"]) {
+  // K5 placeholder: test is notify-only until P3.1.
+  for (const action of ["test"]) {
     const k5 = stubUi({ select: () => "switch", input: () => "x" });
     await h.command(action, k5.ctx);
     assert.deepEqual(k5.selects, []);
@@ -236,4 +237,54 @@ test("wiring: cancelled name input creates nothing", async () => {
   assert.deepEqual(dup.notices, [
     { message: "fresh.md already exists", type: "error" },
   ]);
+});
+
+test("wiring: inspect action writes the immediate dump file and arms capture", async () => {
+  const h = harness();
+  takeArmedCapture(); // start disarmed regardless of earlier tests
+  const ui = stubUi({
+    systemPromptOptions: {
+      cwd: "/tmp",
+      selectedTools: ["read"],
+      toolSnippets: { read: "Read file contents" },
+    },
+  });
+  await h.command("inspect", ui.ctx);
+  const inspectDir = path.join(h.artifactsDir, "inspect");
+  const files = fs.readdirSync(inspectDir);
+  assert.equal(files.length, 1);
+  assert.match(files[0]!, /^\d{4}-\d{2}-\d{2}-\d{6}-immediate\.md$/);
+  const body = fs.readFileSync(path.join(inspectDir, files[0]!), "utf8");
+  assert.match(
+    body,
+    /^# System prompt \(best-effort rebuild at command time\)\n/,
+  );
+  assert.match(body, /## Selected tools\n\n- read: Read file contents\n/);
+  assert.equal(ui.notices.length, 1);
+  assert.equal(ui.notices[0]!.type, undefined);
+  assert.ok(ui.notices[0]!.message.includes(path.join(inspectDir, files[0]!)));
+  assert.match(
+    ui.notices[0]!.message,
+    /send any message to capture the ground-truth dump/,
+  );
+  const stamp = files[0]!.replace(/-immediate\.md$/, "");
+  assert.equal(takeArmedCapture(), stamp, "armed with the file's stamp");
+  assert.equal(takeArmedCapture(), null);
+  // A second inspect within the same second resolves its own collision.
+  await h.command("inspect", ui.ctx);
+  assert.equal(fs.readdirSync(inspectDir).length, 2);
+  takeArmedCapture();
+});
+
+test("wiring: immediate dump write failure notifies error and does not arm", async () => {
+  // A regular file where the artifacts directory should be makes mkdir fail.
+  const blocker = path.join(tempDir("blocker"), "artifacts");
+  fs.writeFileSync(blocker, "not a directory");
+  const h = harness({ artifactsDir: blocker });
+  const ui = stubUi({});
+  await h.command("inspect", ui.ctx);
+  assert.equal(ui.notices.length, 1);
+  assert.equal(ui.notices[0]!.type, "error");
+  assert.equal(takeArmedCapture(), null, "nothing armed");
+  assert.equal(fs.readFileSync(blocker, "utf8"), "not a directory");
 });
