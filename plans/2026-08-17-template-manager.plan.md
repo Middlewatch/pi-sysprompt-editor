@@ -36,7 +36,7 @@ byte copy of the active template`.
   stock shape, unrecognized payload shape) leaves the prompt or artifact in
   the documented fallback state. Verified by named unit tests, one per
   branch.
-- `scripts/verify.sh` exits 0 with 42 unit tests passing, 0 failing.
+- `scripts/verify.sh` exits 0 with 45 unit tests passing, 0 failing.
 
 ## Fixed decisions
 
@@ -98,7 +98,7 @@ Green is: node 22.x asserted, `npm ci` clean, `prettier --check` clean,
 `tsc --noEmit` clean, `node --experimental-strip-types --test
 tests/*.test.ts` all pass, 0 fail. Test count by packet: baseline 4
 (existing `tests/rewrite.test.ts`), P1.1 → 6, P1.2 → 12, P1.3 → 16,
-P1.4 → 20, P2.1 → 25, P2.2 → 34, P3.1 → 42. Live checks that need a real
+P1.4 → 21, P2.1 → 28, P2.2 → 37, P3.1 → 45. Live checks that need a real
 session are phase gate eye checks, named in each phase gate, and are not
 part of verify.sh.
 
@@ -137,9 +137,12 @@ part of verify.sh.
 - `templates/.active` — gitignored one-line pointer file naming a template
   filename, e.g. `default.md`.
 - `fixtures/output-test-document.md` — exists, committed at base.
-- `fixtures/golden/immediate-dump.md`, `fixtures/golden/provider-dump.md`,
+- `fixtures/golden/immediate-dump.md`,
+  `fixtures/golden/immediate-dump-empty.md`,
+  `fixtures/golden/provider-dump.md`,
   `fixtures/golden/output-test-result.md` — golden serializations of the
-  three artifact formats, byte-compared by unit tests, part of the
+  three artifact formats (two for the immediate dump), byte-compared by
+  unit tests, part of the
   freezable asset set. Each golden is a pair: `<name>.input.json` holds
   the exact renderer arguments (immediate-dump: one
   `BuildSystemPromptOptions` value; provider-dump: `{ header, payload }`;
@@ -181,8 +184,13 @@ part of verify.sh.
   a pending capture, sends the pinned message. On the captured turn's end,
   writes `<stamp>-<provider>-<modelId>.md` under
   `../artifacts/output-tests/` and notifies the path.
-- Stamp format: local time `YYYY-MM-DD-HHmmss`. If a target filename
-  already exists, suffix `-2`, `-3`, ... before the extension.
+- Stamp format: local time `YYYY-MM-DD-HHmmss`, zero-padded, via
+  `makeStamp(new Date())`. Collision rule via `freeBase(dir, base, exts)`:
+  if any `<base><ext>` already exists in `dir`, the base becomes
+  `<base>-N` for the smallest integer N ≥ 2 such that no `<base>-N<ext>`
+  exists for any ext in the list; the provider pair passes
+  `[".md", ".txt"]` so both files always share one suffix, single files
+  pass one extension.
 - Filename sanitization: in provider and modelId, every character outside
   `[A-Za-z0-9._-]` becomes `-`.
 - Pointer validity: the pointer file's content, trimmed, must match
@@ -213,13 +221,18 @@ part of verify.sh.
   records what actually rendered on the test turn rather than what was
   active at command time.
 - Serialization rules shared by all three formats: lines are joined with
-  `\n`, blocks are separated by exactly one blank line, the file ends with
-  exactly one `\n`, lists render one `- ` bullet per item and the single
-  line `(none)` when empty or absent, and a fenced block uses a run of
-  backticks one longer than the longest backtick run inside the fenced
-  content (minimum three) so any prompt survives fencing. `<stamp>` is the
-  same value used in the filename. Golden-pinned means the committed
-  golden pair is the byte-level witness of these rules.
+  `\n`, blocks are separated by exactly one blank line, every rendered
+  line and every verbatim block is followed by exactly one `\n`, verbatim
+  content is never trimmed or normalized (so content that already ends in
+  `\n` yields one blank line before the closing fence or the end of file,
+  and that is the intended bytes), lists render one `- ` bullet per item
+  in input-array order and the single line `(none)` when the array is
+  empty or absent, and a fenced block uses a run of backticks one longer
+  than the longest backtick run inside the fenced content (minimum three)
+  so any prompt survives fencing. `<stamp>` is the same value used in the
+  filename; `<provider>` and `<modelId>` are the `modelLabel` values
+  before filename sanitization. Golden-pinned means the committed golden
+  pair is the byte-level witness of these rules.
 - File format, provider dump `.md` (recognized payload):
 
   ```text
@@ -275,7 +288,8 @@ part of verify.sh.
 
   ## Selected tools
 
-  - <tool>: <snippet>      (or `- <tool>` when it has no snippet)
+  - <tool>: <snippet>
+  - <tool>
 
   ## Prompt guidelines
 
@@ -298,8 +312,14 @@ part of verify.sh.
 
   Each list section renders `(none)` when empty or absent, and the
   appended-prompt section renders `(none)` in place of the fence when
-  absent. Context files render paths and sizes only, never content.
-  Golden-pinned.
+  absent or empty. `present` when `customPrompt` is a non-empty string,
+  otherwise `absent`. A tool renders `- <tool>: <snippet>` when
+  `toolSnippets[tool]` is a non-empty string and `- <tool>` otherwise;
+  tools follow `selectedTools` order. Context files render paths and
+  utf-8 byte lengths of their content only, never content. Golden-pinned
+  twice: `immediate-dump` (every section populated) and
+  `immediate-dump-empty` (options carrying only `cwd`, so every section
+  renders its empty form).
 
 ### Types and signatures
 
@@ -354,6 +374,10 @@ export function renderProviderDump(
 };
 export function armCapture(stamp: string): void;
 export function takeArmedCapture(): string | null; // stamp once, then null
+export function makeStamp(now: Date): string; // local YYYY-MM-DD-HHmmss, zero-padded
+export function freeBase(dir: string, base: string, exts: string[]): string;
+// join(dir, base) or join(dir, `${base}-${N}`), smallest N >= 2, such that
+// no candidate + ext exists for any ext; see the collision rule
 
 // lib/output-test.ts
 export const OUTPUT_TEST_PROMPT = "Summarize this article for me.";
@@ -451,9 +475,9 @@ P1.1 (1–4), plus 2 new in P1.1 (5–6):
 
 `tests/wiring.test.ts` — command and hook glue through the real `index.ts`
 default export against a stub ExtensionAPI, always constructed through
-the `paths` seam with temp directories; 4 in P1.3 (16, 17, 32, 40), 1 in
-P1.4 (33), 2 in P2.1 (18, 38), 2 in P2.2 (19, 34), 4 in P3.1 (20, 36, 37,
-42).
+the `paths` seam with temp directories; 4 in P1.3 (16, 17, 32, 40), 2 in
+P1.4 (33, 43), 2 in P2.1 (18, 38), 2 in P2.2 (19, 34), 4 in P3.1 (20, 36,
+37, 42).
 Every header written through the wiring uses `modelLabel`, so the
 `unknown` fallback reaches files without a separate wiring test:
 
@@ -481,15 +505,26 @@ Every header written through the wiring uses `modelLabel`, so the
     (fixturePath pointing at a non-existent file; the test action
     notifies at level "error", calls `pi.sendUserMessage` zero times, and
     records no pending capture)
+43. `wiring: cancelled name input creates nothing` (`ctx.ui.input`
+    resolves undefined; the `new` action returns with no file created and
+    no notify)
 
-`tests/inspect.test.ts` — 3 in P2.1 (21, 27, 39), 7 in P2.2 (22–26, 31,
-41):
+`tests/inspect.test.ts` — 5 in P2.1 (21, 27, 39, 44, 45), 7 in P2.2
+(22–26, 31, 41):
 
 21. `immediate dump: golden byte-compare` (input
     `fixtures/golden/immediate-dump.input.json`, expected
     `fixtures/golden/immediate-dump.md`, covering all sections)
 39. `model label: undefined model yields unknown provider and model id`
     (and a defined model passes provider and id through unchanged)
+44. `stamp: makeStamp zero-pads local time and freeBase suffixes on any
+    collision` (a fixed Date renders `YYYY-MM-DD-HHmmss`; in a temp dir
+    holding `x.txt` but not `x.md`, `freeBase(dir, "x", [".md", ".txt"])`
+    returns `x-2`, and with `x-2.md` also present returns `x-3`)
+45. `immediate dump: empty options golden byte-compare` (input
+    `fixtures/golden/immediate-dump-empty.input.json` carrying only `cwd`,
+    expected `fixtures/golden/immediate-dump-empty.md`; every section
+    renders `absent` or `(none)`)
 22. `extract: anthropic string system`
 23. `extract: anthropic block-array system`
 24. `extract: openai system message`
@@ -518,11 +553,11 @@ Every header written through the wiring uses `modelLabel`, so the
     blocks yields the two texts joined with `"\n\n"`; a message with no
     text blocks yields `""`)
 
-Count reconciliation: 4 existing + 38 new = 42 at completion. Per packet:
+Count reconciliation: 4 existing + 41 new = 45 at completion. Per packet:
 P1.1 adds 5–6 (→ 6), P1.2 adds 7–12 (→ 12), P1.3 adds 16, 17, 32, 40
-(→ 16), P1.4 adds 13–15 and 33 (→ 20), P2.1 adds 18, 21, 27, 38, 39
-(→ 25), P2.2 adds 19, 22–26, 31, 34, 41 (→ 34), P3.1 adds 20, 28–30,
-35–37, 42 (→ 42). These are the
+(→ 16), P1.4 adds 13–15, 33, 43 (→ 21), P2.1 adds 18, 21, 27, 38, 39,
+44, 45 (→ 28), P2.2 adds 19, 22–26, 31, 34, 41 (→ 37), P3.1 adds 20,
+28–30, 35–37, 42 (→ 45). These are the
 totals the Verification contract pins.
 
 ### Least confident decisions
@@ -596,13 +631,14 @@ Changes: `scaffoldTemplate` per the pinned signature and validation.
 Wire the `new` action per the pinned call stack: `ctx.ui.input`, then
 readActiveTemplate (null: notify "no active template to copy"), then
 scaffold, notify created path or the error message.
-Acceptance: verify.sh green; 20 pass, 0 fail (adds tests 13–15 and 33).
+Acceptance: verify.sh green; 21 pass, 0 fail (adds tests 13–15, 33, and
+43).
 Falsification witness: removing the existing-file check turns
 test 15 red.
 
 ### Phase 1 gate
 
-Runnable: `./scripts/verify.sh` green, 20 unit tests pass, 0 fail.
+Runnable: `./scripts/verify.sh` green, 21 unit tests pass, 0 fail.
 Eye check (owner or builder in a live session): `/sysprompt` opens the
 menu; `switch` to a second template visibly changes the next reply's
 voice; `new` creates a template that then appears in the switch list;
@@ -622,18 +658,20 @@ Commit before Phase 2.
 
 Files: index.ts, lib/inspect.ts, tests/inspect.test.ts,
 tests/wiring.test.ts, fixtures/golden/immediate-dump.input.json,
-fixtures/golden/immediate-dump.md
-Changes: `modelLabel`, `renderImmediateDump` per the pinned
-immediate-dump format, and the `armCapture`/`takeArmedCapture` one-shot
-in-memory state. The `inspect` action (replacing the K5 placeholder)
+fixtures/golden/immediate-dump.md,
+fixtures/golden/immediate-dump-empty.input.json,
+fixtures/golden/immediate-dump-empty.md
+Changes: `modelLabel`, `makeStamp`, `freeBase`, `renderImmediateDump`
+per the pinned immediate-dump format, and the
+`armCapture`/`takeArmedCapture` one-shot in-memory state. The `inspect` action (replacing the K5 placeholder)
 writes `../artifacts/inspect/<stamp>-immediate.md`, arms capture with
 that stamp, and notifies the path plus "send any message to capture the
 ground-truth dump" (checkpoint D4); nothing consumes the armed state
-until P2.2. Golden pair created per the Layout blessing rule: a
-`BuildSystemPromptOptions` value exercising every section is committed as
-the input JSON and the rendered bytes as the `.md`.
-Acceptance: verify.sh green; 25 pass, 0 fail (adds tests 18, 21, 27, 38,
-and 39).
+until P2.2. Golden pairs created per the Layout blessing rule: a
+`BuildSystemPromptOptions` value exercising every section, and one
+carrying only `cwd`, each committed as input JSON plus rendered bytes.
+Acceptance: verify.sh green; 28 pass, 0 fail (adds tests 18, 21, 27, 38,
+39, 44, and 45).
 Falsification witness: dropping the skills section from the
 renderer turns the golden compare (21) red.
 
@@ -647,7 +685,7 @@ the pinned formats; `before_provider_request` handler per the pinned
 call stack: `takeArmedCapture` (state landed in P2.1), extraction rules,
 `.md` + `.txt` pair, JSON and String fallbacks, sha256-prefixed notify,
 no payload replacement.
-Acceptance: verify.sh green; 34 pass, 0 fail (adds tests 19, 22–26, 31,
+Acceptance: verify.sh green; 37 pass, 0 fail (adds tests 19, 22–26, 31,
 34, and 41); test 19 asserts the `.txt` bytes equal the synthetic
 payload's system string exactly, test 31 byte-compares the `.md`
 serialization against its golden, test 34 stubs a throwing write and
@@ -658,7 +696,7 @@ twin when extraction returned null turns test 26 red, and dropping the
 
 ### Phase 2 gate
 
-Runnable: verify.sh green, 34 unit tests pass, 0 fail.
+Runnable: verify.sh green, 37 unit tests pass, 0 fail.
 Eye check: in a live session with at least one other prompt-touching
 extension loaded, `/sysprompt inspect` then one message writes all three
 files; `sha256sum <stamp>-provider.txt` matches the notified hash prefix
@@ -683,7 +721,7 @@ Changes: lib/output-test.ts per the pinned signatures and formats
 `test` action (replacing the K5 placeholder) per the pinned
 call stack; attribution via `lastRender` per Interfaces; modelId and
 provider sanitized per Interfaces.
-Acceptance: verify.sh green; 42 pass, 0 fail (adds tests 20, 28–30,
+Acceptance: verify.sh green; 45 pass, 0 fail (adds tests 20, 28–30,
 35–37, and 42); test 20 drives a stub turn where before_agent_start
 failed open and asserts the header records `(stock)` with no sha line;
 test 36 is the positive twin asserting the rendered template's name and
@@ -694,7 +732,7 @@ test 28 red.
 
 ### Phase 3 gate
 
-Runnable: verify.sh green, 42 unit tests pass, 0 fail.
+Runnable: verify.sh green, 45 unit tests pass, 0 fail.
 Eye check: one live `/sysprompt test` run produces a results file whose
 header names the active template, its sha256, and the current model, and
 whose body is the model's summary; owner eyeballs it as the first corpus
@@ -845,3 +883,11 @@ input` return undefined on cancel; `pi.sendUserMessage` always triggers a
   untested Interface branches gained tests 40 (unknown argument, P1.3),
   41 (stringify-throws fallback, P2.2), and 42 (missing fixture, P3.1);
   totals rederived to 16/20/25/34/42 (42 final).
+- Round 10: FAIL with two Mediums —
+  `plans/2026-08-17-template-manager.lint-10.md`. Fixed: verbatim
+  content vs trailing-newline rule made deterministic (never trim, one
+  `\n` after every block); `present`/`absent`, no-snippet tool, and
+  input-array ordering pinned; `makeStamp`/`freeBase` pinned with the
+  pair-shares-one-suffix rule; tests 43 (cancelled name input, P1.4), 44
+  (stamp and collision suffix, P2.1), 45 (empty-options golden, P2.1)
+  added; totals rederived to 21/28/37/45 (45 final).
