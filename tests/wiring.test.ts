@@ -363,7 +363,7 @@ test("wiring: armed capture writes provider md and raw txt with payload bytes", 
   assert.deepEqual(stale.notices, [
     {
       message:
-        "inspect 2026-01-02-030405: provider did not expose its payload; capture cancelled",
+        "inspect 2026-01-02-030405: provider did not expose its payload (custom providers must call options.onPayload in streamSimple); capture cancelled",
       type: "warning",
     },
   ]);

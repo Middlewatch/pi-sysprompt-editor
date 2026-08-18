@@ -230,7 +230,7 @@ export default function systemPromptExtension(
     const stale = takeArmedCapture();
     if (stale !== null) {
       ctx.ui.notify(
-        `inspect ${stale}: provider did not expose its payload; capture cancelled`,
+        `inspect ${stale}: provider did not expose its payload (custom providers must call options.onPayload in streamSimple); capture cancelled`,
         "warning",
       );
     }

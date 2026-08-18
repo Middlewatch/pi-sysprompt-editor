@@ -2,9 +2,12 @@
 
 Pi extension that rebuilds the core system prompt from the owner-authored
 templates in `templates/` and manages them through `/sysprompt` (switch,
-new, inspect, test). `DESIGN.md` is the design basis as built; the dated
-decision records live in `docs/`, and finished build plans with their
-execution logs and review registers live in `plans/`.
+new, inspect, test). `DESIGN.md` and `README.md` are the living docs and
+describe the product as built. `docs/` holds dated decision records and
+`plans/` holds finished build plans with their execution logs and lint and
+review registers; both are append-only history. A new decision or build
+adds a dated file there rather than editing an old one, and the living docs
+absorb whatever the change settled.
 
 ## Workflow charters
 

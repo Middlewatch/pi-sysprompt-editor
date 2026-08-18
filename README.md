@@ -3,8 +3,10 @@
 A Pi extension that rebuilds the core of Pi's system prompt (identity, tool
 list, guidelines, documentation routing) from an owner-authored markdown
 template. The template owns the prose; the harness owns the live data,
-spliced in through three optional placeholders (`{{AVAILABLE_TOOLS}}`,
-`{{GUIDELINES}}`, `{{PI_DOCS}}`). Everything Pi appends after the core
+spliced in through four optional placeholders (`{{AVAILABLE_TOOLS}}`,
+`{{GUIDELINES}}`, `{{PI_DOCS}}`, `{{PI_SCRATCHPAD}}`; the last renders
+from `$PI_SCRATCHPAD` and is empty when the pi-scratchpad extension is not
+running). Everything Pi appends after the core
 (project context, skills, working directory) is left untouched.
 
 The extension fails open: an active `SYSTEM.md` custom prompt, an

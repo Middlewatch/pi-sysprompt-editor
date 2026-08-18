@@ -25,8 +25,12 @@ unmodified.
 
 - **Stock core**: the harness-assembled prompt from the identity line
   through the documentation section, before appended layers.
-- **Template**: a markdown file in `templates/`, owner prose with three
-  placeholders: `{{AVAILABLE_TOOLS}}`, `{{GUIDELINES}}`, `{{PI_DOCS}}`.
+- **Template**: a markdown file in `templates/`, owner prose with four
+  placeholders: `{{AVAILABLE_TOOLS}}`, `{{GUIDELINES}}`, `{{PI_DOCS}}`,
+  `{{PI_SCRATCHPAD}}` (the session scratch path from `$PI_SCRATCHPAD`,
+  empty when unset). Adding a placeholder touches `renderTemplate` in
+  `lib/splice.ts`, every shipped template, the placeholder unit test, and
+  this list.
 - **Active pointer**: a small state file naming which template the splice
   reads. Switching templates writes the pointer; the next turn renders it.
 - **Tail**: everything the harness appends after the core (project context,
