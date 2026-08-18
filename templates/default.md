@@ -9,7 +9,4 @@ Guidelines:
 {{GUIDELINES}}
 
 {{PI_DOCS}}
-
-## Scratchpad
-
 {{PI_SCRATCHPAD}}

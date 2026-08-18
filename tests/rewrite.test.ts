@@ -7,6 +7,8 @@
  */
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import test from "node:test";
 import systemPromptExtension from "../index.ts";
 import { renderTemplate, scratchpadSection } from "../lib/splice.ts";
@@ -27,6 +29,20 @@ const STOCK_CORE =
   `Guidelines:\n${GUIDELINES}\n\n` +
   DOCS;
 
+/**
+ * A temp templates dir holding only the repo's default.md, so the rewrite
+ * under test does not depend on the gitignored `.active` pointer in the
+ * live templates directory.
+ */
+const DEFAULT_TEMPLATE = fs.readFileSync(
+  new URL("../templates/default.md", import.meta.url),
+  "utf8",
+);
+const TEMPLATES_DIR = fs.mkdtempSync(
+  path.join(os.tmpdir(), "sysprompt-rewrite-"),
+);
+fs.writeFileSync(path.join(TEMPLATES_DIR, "default.md"), DEFAULT_TEMPLATE);
+
 function capturedHandler(): (
   event: unknown,
 ) => Promise<{ systemPrompt: string } | undefined> {
@@ -37,7 +53,7 @@ function capturedHandler(): (
     },
     registerCommand() {},
   };
-  systemPromptExtension(stub as never);
+  systemPromptExtension(stub as never, { templatesDir: TEMPLATES_DIR });
   assert.ok(handler, "extension registered a before_agent_start handler");
   return handler as (
     event: unknown,
@@ -45,15 +61,10 @@ function capturedHandler(): (
 }
 
 test("stock prompt is rebuilt from the template with the tail preserved", async () => {
-  const template = fs.readFileSync(
-    new URL("../templates/default.md", import.meta.url),
-    "utf8",
-  );
   const result = await capturedHandler()({ systemPrompt: STOCK_CORE + TAIL });
   assert.ok(result, "handler returned a rewritten prompt");
   const expected =
-    template
-      .replaceAll("{{AVAILABLE_TOOLS}}", TOOLS)
+    DEFAULT_TEMPLATE.replaceAll("{{AVAILABLE_TOOLS}}", TOOLS)
       .replaceAll("{{GUIDELINES}}", GUIDELINES)
       .replaceAll("{{PI_DOCS}}", DOCS)
       .replaceAll(
