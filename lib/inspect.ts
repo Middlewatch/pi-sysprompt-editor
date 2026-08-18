@@ -129,15 +129,21 @@ function joinTextBlocks(blocks: unknown): string | null {
 
 /**
  * Pull the system prompt out of a provider payload. Recognizes an Anthropic
- * style `system` (string or text-block array) and an OpenAI style leading
- * `messages[0]` with role `system` or `developer` (string or text-block
- * content). Anything else is null.
+ * style `system` (string or text-block array), OpenAI Responses/Codex
+ * `instructions`, and an OpenAI chat-style leading `messages[0]` with role
+ * `system` or `developer` (string or text-block content). Anything else is
+ * null.
  */
 export function extractSystemPromptFromPayload(
   payload: unknown,
 ): string | null {
   if (payload === null || typeof payload !== "object") return null;
-  const p = payload as { system?: unknown; messages?: unknown };
+  const p = payload as {
+    instructions?: unknown;
+    system?: unknown;
+    messages?: unknown;
+  };
+  if (typeof p.instructions === "string") return p.instructions;
   if (typeof p.system === "string") return p.system;
   if (Array.isArray(p.system)) return joinTextBlocks(p.system);
   if (Array.isArray(p.messages) && p.messages.length > 0) {

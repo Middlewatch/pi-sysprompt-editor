@@ -98,6 +98,21 @@ test("extract: anthropic string system", () => {
   assert.match(dump.md, /^# Provider system prompt \(ground truth\)\n/);
 });
 
+test("extract: OpenAI Responses/Codex instructions", () => {
+  const payload = {
+    model: "gpt-x",
+    instructions: "INSTRUCTIONS\nline two",
+    input: [{ role: "user", content: [] }],
+  };
+  assert.equal(
+    extractSystemPromptFromPayload(payload),
+    "INSTRUCTIONS\nline two",
+  );
+  const dump = renderProviderDump(HEADER, payload);
+  assert.equal(dump.txt, "INSTRUCTIONS\nline two");
+  assert.match(dump.md, /INSTRUCTIONS\nline two/);
+});
+
 test("extract: anthropic block-array system", () => {
   const payload = {
     system: [
