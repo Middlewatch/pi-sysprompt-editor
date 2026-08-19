@@ -12,9 +12,9 @@ absorb whatever the change settled.
 ## Workflow charters
 
 House process detail lives in the cross-project charters:
-`~/projects/agent-guidance/workflows/freezable-workflow.md` (freezability
+`~/.agents/kit/guidance/workflows/freezable-workflow.md` (freezability
 invariant, asset types, packet/review loop, budget tiers) and its companion
-`~/projects/agent-guidance/workflows/verification-toolbox.md` (tool choices
+`~/.agents/kit/guidance/workflows/verification-toolbox.md` (tool choices
 per verification capability). Read them before planning packets, gates, or
 reviews.
 
