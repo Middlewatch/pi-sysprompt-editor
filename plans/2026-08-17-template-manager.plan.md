@@ -1,3 +1,8 @@
+> [!CAUTION]
+> **DO NOT EXECUTE - REWRITE PENDING.** This plan belongs to the plan/execute
+> workflow retired on 2026-08-19. Do not build from this file. If this work
+> resumes, write a fresh spec under the current workflow.
+
 # Template manager build
 
 **Status:** done
