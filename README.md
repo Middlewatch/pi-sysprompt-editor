@@ -7,9 +7,9 @@ spliced in through five optional placeholders (`{{AVAILABLE_TOOLS}}`,
 `{{GUIDELINES}}`, `{{PI_DOCS}}`, `{{PI_SCRATCHPAD}}`, `{{SKILLS}}`).
 `{{PI_SCRATCHPAD}}` renders from `$PI_SCRATCHPAD` and is empty when the
 pi-scratchpad extension is not running. `{{SKILLS}}` lifts Pi's skills
-block out of the tail and places it where the template says (right after
-the tools in `jake.md`); neoskills then splices its registry into that
-block wherever it sits. Everything else Pi appends after the core (project
+block out of the tail and places it where the template says. The block
+keeps Pi's exact text, so a skill-registry extension that splices on its
+sentinels keeps working wherever the template put it. Everything else Pi appends after the core (project
 context, working directory) is left untouched.
 
 The extension fails open: an active `SYSTEM.md` custom prompt, an

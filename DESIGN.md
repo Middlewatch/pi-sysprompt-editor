@@ -2,9 +2,7 @@
 
 **Status:** as built 2026-08-17.
 
-Reading list: `README.md` for the short product description,
-`docs/2026-08-17-template-manager-scope.md` for the decision record behind
-this revision.
+Reading list: `README.md` for the short product description.
 
 ## Thesis
 
@@ -147,10 +145,8 @@ document would rebuild the behavior if the tree vanished.
 
 - Seeded from the working single-template extension built 2026-08-17 and
   moved here for standalone development.
-- Revised 2026-08-17 to expand scope to the template manager. The decision
-  record, including the delta against the prior basis, is
-  `docs/2026-08-17-template-manager-scope.md`. Feasibility was checked
-  against the Pi extension documentation shipped with the harness.
-- Built 2026-08-17 from `plans/2026-08-17-template-manager.plan.md`; the
-  two harness-semantics behaviors in Expected behaviors were review
-  findings ratified as amendments during that build.
+- Revised 2026-08-17 to expand scope to the template manager. Feasibility
+  was checked against the Pi extension documentation shipped with the
+  harness.
+- Built 2026-08-17; the two harness-semantics behaviors in Expected
+  behaviors were review findings ratified as amendments during that build.
