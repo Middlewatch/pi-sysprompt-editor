@@ -3,11 +3,14 @@
 A Pi extension that rebuilds the core of Pi's system prompt (identity, tool
 list, guidelines, documentation routing) from an owner-authored markdown
 template. The template owns the prose; the harness owns the live data,
-spliced in through four optional placeholders (`{{AVAILABLE_TOOLS}}`,
-`{{GUIDELINES}}`, `{{PI_DOCS}}`, `{{PI_SCRATCHPAD}}`; the last renders
-from `$PI_SCRATCHPAD` and is empty when the pi-scratchpad extension is not
-running). Everything Pi appends after the core
-(project context, skills, working directory) is left untouched.
+spliced in through five optional placeholders (`{{AVAILABLE_TOOLS}}`,
+`{{GUIDELINES}}`, `{{PI_DOCS}}`, `{{PI_SCRATCHPAD}}`, `{{SKILLS}}`).
+`{{PI_SCRATCHPAD}}` renders from `$PI_SCRATCHPAD` and is empty when the
+pi-scratchpad extension is not running. `{{SKILLS}}` lifts Pi's skills
+block out of the tail and places it where the template says (right after
+the tools in `jake.md`); neoskills then splices its registry into that
+block wherever it sits. Everything else Pi appends after the core (project
+context, working directory) is left untouched.
 
 The extension fails open: an active `SYSTEM.md` custom prompt, an
 unrecognized stock prompt shape, or no resolvable template all leave the
@@ -34,7 +37,11 @@ straight to one. Cancelling any picker ends the command with no write.
   then on your next message writes the ground truth taken from the provider
   request: a readable `.md` and a raw `.txt` whose bytes are exactly the
   system prompt sent, with the `.txt` sha256 prefix in the notification.
-  Files land in `../artifacts/inspect/` beside the repo.
+  Files land in `../artifacts/inspect/` beside the repo. On `claude-go`
+  with `CLAUDE_GO_CAPTURE_DIR` set in pi's environment, a third pair
+  (`-wire.md`/`-wire.txt`) follows once the request has left: the system
+  prompt as the `claude` child sent it to the API, picked out of the
+  capture dir as the record whose system prompt contains pi's.
 - `test`: sends "Summarize this article for me." with the fixture at
   `fixtures/output-test-document.md` through the normal pipeline and writes
   the reply to `../artifacts/output-tests/<stamp>-<provider>-<model>.md`,

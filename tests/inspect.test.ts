@@ -10,12 +10,16 @@ import * as path from "node:path";
 import test from "node:test";
 import {
   armCapture,
+  awaitWireRecord,
   extractSystemPromptFromPayload,
+  findWireRecord,
   freeBase,
+  listDir,
   makeStamp,
   modelLabel,
   renderImmediateDump,
   renderProviderDump,
+  renderWireDump,
   takeArmedCapture,
 } from "../lib/inspect.ts";
 
@@ -206,4 +210,73 @@ test("provider dump: golden byte-compare", () => {
   const dump = renderProviderDump(header, payload);
   assert.equal(dump.md, expected);
   assert.equal(dump.txt, (payload as { system: string }).system);
+});
+
+test("wire pickup: selects the fresh POST record carrying pi's system prompt and renders it", async () => {
+  const dir = tempDir();
+  const write = (name: string, rec: unknown) =>
+    fs.writeFileSync(path.join(dir, name), JSON.stringify(rec));
+  write("old-001.json", {
+    method: "POST",
+    url: "/v1/messages",
+    body: { system: "core prompt" },
+  });
+  const before = listDir(dir);
+  // HEAD probe, then the CLI's naming side call, then the real turn.
+  write("new-001.json", { method: "HEAD", url: "/api/hello" });
+  write("new-002.json", {
+    method: "POST",
+    url: "/v1/messages?beta=true",
+    body: {
+      model: "claude-haiku",
+      system: [{ type: "text", text: "You are naming a coding session" }],
+    },
+  });
+  assert.equal(findWireRecord(dir, before, "core prompt"), null);
+  fs.writeFileSync(path.join(dir, "new-003.json"), "{not json");
+  const pending = awaitWireRecord(dir, before, "core prompt", 2000, 20);
+  setTimeout(() => {
+    write("new-004.json", {
+      method: "POST",
+      url: "/v1/messages?beta=true",
+      headers: { Authorization: "<redacted>" },
+      body: {
+        model: "claude-sonnet",
+        system: [
+          { type: "text", text: "x-anthropic-billing-header: cc_version=1" },
+          { type: "text", text: "You are a Claude agent." },
+          { type: "text", text: "core prompt\nmore" },
+        ],
+      },
+    });
+  }, 60);
+  const hit = await pending;
+  assert.ok(hit !== null);
+  assert.equal(hit.file, "new-004.json");
+  const dump = renderWireDump(
+    {
+      timestamp: "2026-01-01-000000",
+      provider: "claude-go",
+      modelId: "sonnet",
+    },
+    hit.file,
+    hit.record,
+    hit.system,
+  );
+  assert.equal(
+    dump.txt,
+    "x-anthropic-billing-header: cc_version=1\n\nYou are a Claude agent.\n\ncore prompt\nmore",
+  );
+  assert.match(
+    dump.md,
+    /- record: new-004\.json\n- request: POST \/v1\/messages\?beta=true\n- wire model: claude-sonnet\n- system blocks: 3\n/,
+  );
+  assert.match(dump.md, /```\nx-anthropic-billing-header/);
+  // No needle: the first POST wins, whatever it says.
+  assert.equal(findWireRecord(dir, before, null)?.file, "new-002.json");
+  // Timeout returns null rather than hanging.
+  assert.equal(
+    await awaitWireRecord(dir, listDir(dir), "absent", 50, 10),
+    null,
+  );
 });

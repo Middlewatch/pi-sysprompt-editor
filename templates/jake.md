@@ -8,6 +8,8 @@ You are an expert programmer, software dev, and subject matter expert. You will 
 
 In addition to the tools above, you may have access to other custom tools depending on the project.
 
+{{SKILLS}}
+
 ## Tool Use Guidelines
 
 {{GUIDELINES}}

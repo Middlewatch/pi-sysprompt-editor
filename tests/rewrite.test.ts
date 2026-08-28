@@ -165,3 +165,74 @@ test("renderTemplate returns null on drifted shape", () => {
     null,
   );
 });
+
+test("{{SKILLS}} relocates pi's stock skills block into the template", async () => {
+  const block =
+    "The following skills provide specialized instructions for specific tasks.\n" +
+    "Use the read tool to load a skill's file when the task matches its description.\n\n" +
+    "<available_skills>\n  <skill>\n    <name>harvest</name>\n  </skill>\n</available_skills>";
+  const tail =
+    "\n\n<project_context>ctx</project_context>\n\n" +
+    block +
+    "\nCurrent working directory: /w";
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sysprompt-skills-"));
+  fs.writeFileSync(
+    path.join(dir, "default.md"),
+    "Intro.\n\n## Tools\n\n{{AVAILABLE_TOOLS}}\n\n## Skills\n\n{{SKILLS}}\n\n## Rules\n\n{{GUIDELINES}}\n\n{{PI_DOCS}}\n",
+  );
+  let handler: any;
+  systemPromptExtension(
+    {
+      on(name: string, fn: unknown) {
+        if (name === "before_agent_start") handler = fn;
+      },
+      registerCommand() {},
+    } as never,
+    { templatesDir: dir },
+  );
+  const result = await handler({ systemPrompt: STOCK_CORE + tail });
+  assert.equal(
+    result?.systemPrompt,
+    `Intro.\n\n## Tools\n\n${TOOLS}\n\n## Skills\n\n${block}\n\n## Rules\n\n${GUIDELINES}\n\n${DOCS}` +
+      "\n\n<project_context>ctx</project_context>\nCurrent working directory: /w",
+  );
+  // No skills block in the tail: the placeholder renders empty.
+  const bare = await handler({
+    systemPrompt: STOCK_CORE + "\nCurrent working directory: /w",
+  });
+  assert.equal(
+    bare?.systemPrompt,
+    `Intro.\n\n## Tools\n\n${TOOLS}\n\n## Skills\n\n\n\n## Rules\n\n${GUIDELINES}\n\n${DOCS}` +
+      "\nCurrent working directory: /w",
+  );
+});
+
+test("{{SKILLS}} lifts the block when no project context precedes it", async () => {
+  const block =
+    "The following skills provide specialized instructions for specific tasks.\n" +
+    "Use the read tool to load a skill's file when the task matches its description.\n\n" +
+    "<available_skills>\n  <skill>\n    <name>harvest</name>\n  </skill>\n</available_skills>";
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sysprompt-skills-"));
+  fs.writeFileSync(
+    path.join(dir, "default.md"),
+    "Intro.\n\n{{AVAILABLE_TOOLS}}\n\n{{SKILLS}}\n\n{{GUIDELINES}}\n\n{{PI_DOCS}}\n",
+  );
+  let handler: any;
+  systemPromptExtension(
+    {
+      on(name: string, fn: unknown) {
+        if (name === "before_agent_start") handler = fn;
+      },
+      registerCommand() {},
+    } as never,
+    { templatesDir: dir },
+  );
+  const result = await handler({
+    systemPrompt:
+      STOCK_CORE + "\n\n" + block + "\nCurrent working directory: /w",
+  });
+  assert.equal(
+    result?.systemPrompt,
+    `Intro.\n\n${TOOLS}\n\n${block}\n\n${GUIDELINES}\n\n${DOCS}\nCurrent working directory: /w`,
+  );
+});

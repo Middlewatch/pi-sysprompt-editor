@@ -8,6 +8,7 @@
 export function splitTail(prompt: string): [core: string, tail: string] {
   for (const marker of [
     "\n\n<project_context>",
+    "\n\nThe following skills provide specialized instructions",
     "\n<available_skills>",
     "\nCurrent working directory:",
   ]) {
@@ -15,6 +16,29 @@ export function splitTail(prompt: string): [core: string, tail: string] {
     if (i !== -1) return [prompt.slice(0, i), prompt.slice(i)];
   }
   return [prompt, ""];
+}
+
+const SKILLS_START = "The following skills provide specialized instructions";
+const SKILLS_END = "</available_skills>";
+
+/**
+ * Lift pi's stock skills block (preamble through the closing tag) out of
+ * the tail so a template can place it at `{{SKILLS}}`. The block keeps
+ * pi's exact text, so a registry extension that splices on those
+ * sentinels (neoskills) works wherever the template put it. Returns the
+ * block (empty when the tail has none) and the tail without it.
+ */
+export function liftSkillsBlock(tail: string): [block: string, rest: string] {
+  const start = tail.indexOf(SKILLS_START);
+  if (start === -1) return ["", tail];
+  const endAt = tail.indexOf(SKILLS_END, start);
+  if (endAt === -1) return ["", tail];
+  const end = endAt + SKILLS_END.length;
+  const block = tail.slice(start, end);
+  // Drop the blank line that separated the block from what came before;
+  // pi's own newline after the closing tag carries the rest.
+  const before = tail.slice(0, start).replace(/\n+$/, "");
+  return [block, before + tail.slice(end)];
 }
 
 /** Return the text between two anchors in the core, or null if absent. */
@@ -59,6 +83,7 @@ export function renderTemplate(
   template: string,
   core: string,
   scratchpad?: string,
+  skills = "",
 ): string | null {
   const tools = extract(
     core,
@@ -75,5 +100,6 @@ export function renderTemplate(
     .replaceAll("{{GUIDELINES}}", guidelines)
     .replaceAll("{{PI_DOCS}}", docs)
     .replaceAll("{{PI_SCRATCHPAD}}", scratchpadSection(scratchpad))
+    .replaceAll("{{SKILLS}}", skills)
     .trimEnd();
 }

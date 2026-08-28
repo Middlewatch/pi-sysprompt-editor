@@ -12,10 +12,14 @@
  *   {{PI_SCRATCHPAD}}    one bullet naming the session scratch directory, read
  *                        from process.env.PI_SCRATCHPAD (published by the
  *                        pi-scratchpad extension); empty when unset
+ *   {{SKILLS}}           pi's skills block, lifted out of the tail so the
+ *                        template chooses its position (after the tools,
+ *                        in the owner's template); neoskills then splices
+ *                        its registry into that block wherever it sits
  *
- * Everything after the core (project_context/AGENTS.md, skills, cwd) is
- * left untouched, so context files and skills keep layering
- * normally and the claude-go bridge forwards the rewritten prompt as-is.
+ * Everything else after the core (project_context/AGENTS.md, cwd) is left
+ * untouched, so context files keep layering normally and the claude-go
+ * bridge forwards the rewritten prompt as-is.
  *
  * Fail-open posture: if a SYSTEM.md/--system-prompt custom prompt is active,
  * if the stock template shape is unrecognized (a pi update changed it), or if
@@ -32,11 +36,15 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import {
   armCapture,
+  awaitWireRecord,
+  extractSystemPromptFromPayload,
   freeBase,
+  listDir,
   makeStamp,
   modelLabel,
   renderImmediateDump,
   renderProviderDump,
+  renderWireDump,
   takeArmedCapture,
 } from "./lib/inspect.ts";
 import {
@@ -45,7 +53,7 @@ import {
   formatResult,
   resultBase,
 } from "./lib/output-test.ts";
-import { renderTemplate, splitTail } from "./lib/splice.ts";
+import { liftSkillsBlock, renderTemplate, splitTail } from "./lib/splice.ts";
 import {
   listTemplates,
   readActiveTemplate,
@@ -110,11 +118,17 @@ export default function systemPromptExtension(
     const active = readActiveTemplate(templatesDir);
     if (active === null) return; // no template resolves: stock prompt stands
 
-    const [core, tail] = splitTail(prompt);
+    const [core, fullTail] = splitTail(prompt);
+    // A template with {{SKILLS}} takes pi's skills block out of the tail
+    // and places it itself; without the placeholder the tail is untouched.
+    const [skills, tail] = active.content.includes("{{SKILLS}}")
+      ? liftSkillsBlock(fullTail)
+      : ["", fullTail];
     const rendered = renderTemplate(
       active.content,
       core,
       process.env.PI_SCRATCHPAD,
+      skills,
     );
     if (rendered === null) return; // shape drifted: fail open
     lastRender = {
@@ -185,6 +199,43 @@ export default function systemPromptExtension(
     }
     const inspectDir = path.join(artifactsDir, "inspect");
     const { provider, modelId } = modelLabel(ctx.model);
+    // Wire pickup: the capture dir is snapshotted before the request leaves
+    // so the record that appears after it is this turn's. Not awaited here;
+    // pi holds the request until this handler returns.
+    const captureDir = process.env.CLAUDE_GO_CAPTURE_DIR;
+    if (provider === "claude-go" && captureDir) {
+      const before = listDir(captureDir);
+      const needle = extractSystemPromptFromPayload(event.payload);
+      void awaitWireRecord(captureDir, before, needle).then((hit) => {
+        if (hit === null) {
+          ctx.ui.notify(
+            `inspect ${stamp}: no wire record appeared in ${captureDir}`,
+            "warning",
+          );
+          return;
+        }
+        const wire = renderWireDump(
+          { timestamp: stamp, provider, modelId },
+          hit.file,
+          hit.record,
+          hit.system,
+        );
+        const wireBase = path.join(
+          inspectDir,
+          freeBase(inspectDir, `${stamp}-wire`, [".md", ".txt"]),
+        );
+        const failure =
+          writeArtifact(`${wireBase}.md`, wire.md) ??
+          (wire.txt === null
+            ? null
+            : writeArtifact(`${wireBase}.txt`, wire.txt));
+        if (failure !== null) {
+          ctx.ui.notify(failure, "error");
+          return;
+        }
+        ctx.ui.notify(`wrote ${wireBase}.md from ${hit.file}`);
+      });
+    }
     let dump: { md: string; txt: string | null };
     try {
       dump = renderProviderDump(

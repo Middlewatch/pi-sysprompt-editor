@@ -209,3 +209,97 @@ export function takeArmedCapture(): string | null {
   armed = null;
   return stamp;
 }
+
+// Wire pickup for claude-go: with CLAUDE_GO_CAPTURE_DIR set, the bridge's
+// child writes one JSON record per API request. The record for this turn
+// is the one whose system prompt contains the prompt pi handed over; the
+// CLI's own side calls (session naming) carry a different one.
+
+/** One claude-go wiretap record (internal/wiretap.Record). */
+export interface WireRecord {
+  time?: string;
+  method: string;
+  url: string;
+  headers?: Record<string, string>;
+  body?: unknown;
+}
+
+/** The set of files in `dir` now; an unreadable dir counts as empty. */
+export function listDir(dir: string): Set<string> {
+  try {
+    return new Set(fs.readdirSync(dir));
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Among the files in `dir` absent from `before`, the first POST record
+ * whose extracted system prompt contains `needle` (any POST when `needle`
+ * is null). Unparseable files are skipped.
+ */
+export function findWireRecord(
+  dir: string,
+  before: Set<string>,
+  needle: string | null,
+): { file: string; record: WireRecord; system: string | null } | null {
+  const fresh = [...listDir(dir)].filter((f) => !before.has(f)).sort();
+  for (const file of fresh) {
+    let record: WireRecord;
+    try {
+      record = JSON.parse(fs.readFileSync(path.join(dir, file), "utf8"));
+    } catch {
+      continue;
+    }
+    if (record.method !== "POST") continue;
+    const system = extractSystemPromptFromPayload(record.body);
+    if (needle === null || (system !== null && system.includes(needle))) {
+      return { file, record, system };
+    }
+  }
+  return null;
+}
+
+/** Poll `findWireRecord` every `everyMs` until it hits or `timeoutMs` passes. */
+export async function awaitWireRecord(
+  dir: string,
+  before: Set<string>,
+  needle: string | null,
+  timeoutMs = 20_000,
+  everyMs = 250,
+): Promise<ReturnType<typeof findWireRecord>> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const hit = findWireRecord(dir, before, needle);
+    if (hit !== null) return hit;
+    if (Date.now() >= deadline) return null;
+    await new Promise((resolve) => setTimeout(resolve, everyMs));
+  }
+}
+
+/** The wire dump: readable `.md` and the raw system prompt as sent. */
+export function renderWireDump(
+  header: DumpHeader,
+  file: string,
+  record: WireRecord,
+  system: string | null,
+): { md: string; txt: string | null } {
+  const head = headerLines(
+    "Wire system prompt (as the claude child sent it)",
+    header,
+  );
+  const body = record.body as { model?: unknown; system?: unknown } | undefined;
+  const blocks = Array.isArray(body?.system) ? body.system.length : null;
+  const meta =
+    `- record: ${file}\n` +
+    `- request: ${record.method} ${record.url}\n` +
+    `- wire model: ${typeof body?.model === "string" ? body.model : "unknown"}\n` +
+    `- system blocks: ${blocks ?? "n/a"}\n`;
+  if (system === null) {
+    return {
+      md: `${head}${meta}\nNo system prompt in the record.\n`,
+      txt: null,
+    };
+  }
+  return { md: `${head}${meta}\n${fenced(system)}`, txt: system };
+}
